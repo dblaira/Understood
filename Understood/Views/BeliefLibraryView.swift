@@ -49,7 +49,7 @@ struct BeliefLibraryView: View {
                     VStack(spacing: 16) {
                         Image(systemName: "brain.head.profile")
                             .font(.system(size: 80))
-                            .foregroundStyle(.textPrimary.opacity(0.2))
+                            .foregroundStyle(Color.textPrimary.opacity(0.2))
                         Text("No beliefs yet")
                             .font(Typography.emptyState)
                         Text("As you capture entries, the AI will\nidentify your underlying beliefs")

@@ -67,7 +67,7 @@ struct EntryDetailView: View {
                 Text(stripHTML(entry.content))
                     .font(Typography.body)
                     .lineSpacing(6)
-                    .foregroundStyle(.textPrimary.opacity(0.9))
+                    .foregroundStyle(Color.textPrimary.opacity(0.9))
 
                 // MARK: - AI Versions
 
@@ -95,8 +95,8 @@ struct EntryDetailView: View {
                                             .fontWeight(.semibold)
                                             .padding(.horizontal, 16)
                                             .padding(.vertical, 8)
-                                            .background(selectedVersion == index ? Color.black : .surfaceSubtle)
-                                            .foregroundStyle(selectedVersion == index ? .white : .textSecondary)
+                                            .background(selectedVersion == index ? Color.black : Color.surfaceSubtle)
+                                            .foregroundStyle(selectedVersion == index ? Color.white : Color.textSecondary)
                                             .cornerRadius(20)
                                     }
                                 }
@@ -115,7 +115,7 @@ struct EntryDetailView: View {
                                 Text(stripHTML(version.body ?? version.content))
                                     .font(Typography.versionBody)
                                     .lineSpacing(5)
-                                    .foregroundStyle(.textPrimary.opacity(0.85))
+                                    .foregroundStyle(Color.textPrimary.opacity(0.85))
                             }
                             .padding(16)
                             .background(Color.surfaceSubtle)

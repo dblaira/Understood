@@ -45,7 +45,7 @@ struct ContentView: View {
                     VStack(spacing: 16) {
                         Image(systemName: "book.pages")
                             .font(.system(size: 80))
-                            .foregroundStyle(.textPrimary.opacity(0.2))
+                            .foregroundStyle(Color.textPrimary.opacity(0.2))
                         Text("No entries yet")
                             .font(Typography.emptyState)
                         Text("Tap + to capture your first entry")

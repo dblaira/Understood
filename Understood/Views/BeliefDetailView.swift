@@ -163,7 +163,7 @@ struct BeliefDetailView: View {
                         Text(stripHTML(belief.content))
                             .font(Typography.body)
                             .lineSpacing(6)
-                            .foregroundStyle(.textPrimary.opacity(0.9))
+                            .foregroundStyle(Color.textPrimary.opacity(0.9))
                     }
                 }
 

@@ -49,8 +49,8 @@ struct CaptureView: View {
                                         .font(Typography.uiMedium)
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 8)
-                                        .background(selectedCategory == category ? Color.black : .surfaceSubtle)
-                                        .foregroundStyle(selectedCategory == category ? .white : .textPrimary)
+                                        .background(selectedCategory == category ? Color.black : Color.surfaceSubtle)
+                                        .foregroundStyle(selectedCategory == category ? Color.white : Color.textPrimary)
                                         .cornerRadius(20)
                                 }
                             }
@@ -77,7 +77,7 @@ struct CaptureView: View {
                             if content.isEmpty {
                                 Text("What happened? What are you thinking about?")
                                     .font(Typography.editor)
-                                    .foregroundStyle(.textPrimary.opacity(0.25))
+                                    .foregroundStyle(Color.textPrimary.opacity(0.25))
                                     .padding(.horizontal, 21)
                                     .padding(.top, 20)
                                     .allowsHitTesting(false)

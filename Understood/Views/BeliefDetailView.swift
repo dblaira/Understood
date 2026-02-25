@@ -13,6 +13,7 @@ struct BeliefDetailView: View {
 
     @State private var connectedEntries: [Entry] = []
     @State private var isLoadingEntries = true
+    @State private var actionFeedback: String?
 
     var body: some View {
         ScrollView {
@@ -65,29 +66,30 @@ struct BeliefDetailView: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        // TODO: Implement "This Landed" feedback
+                        Task { await sendResponse("landed") }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "hand.thumbsup.fill")
+                            Image(systemName: actionFeedback == "landed" ? "checkmark" : "hand.thumbsup.fill")
                                 .font(.system(size: 14))
-                            Text("This Landed")
+                            Text(actionFeedback == "landed" ? "Landed!" : "This Landed")
                                 .font(Typography.uiMedium)
                                 .fontWeight(.semibold)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.textPrimary)
+                        .background(actionFeedback == "landed" ? Color.understoodCrimson : Color.textPrimary)
                         .foregroundStyle(.white)
                         .cornerRadius(8)
                     }
+                    .disabled(actionFeedback != nil)
 
                     Button {
-                        // TODO: Implement "Not Now" snooze
+                        Task { await sendResponse("snooze") }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "clock")
+                            Image(systemName: actionFeedback == "snooze" ? "checkmark" : "clock")
                                 .font(.system(size: 14))
-                            Text("Not Now")
+                            Text(actionFeedback == "snooze" ? "Snoozed" : "Not Now")
                                 .font(Typography.uiMedium)
                                 .fontWeight(.semibold)
                         }
@@ -101,6 +103,7 @@ struct BeliefDetailView: View {
                                 .stroke(Color.borderLight, lineWidth: 1)
                         )
                     }
+                    .disabled(actionFeedback != nil)
                 }
 
                 Divider()
@@ -175,6 +178,36 @@ struct BeliefDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadConnectedEntries()
+        }
+    }
+
+    // MARK: - Actions
+
+    private func sendResponse(_ action: String) async {
+        guard let url = URL(string: "\(SupabaseService.apiBaseURL)/api/notifications/response") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "connectionId": belief.id,
+            "action": action
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (_, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        actionFeedback = action
+                    }
+                }
+            }
+        } catch {
+            print("Belief response error: \(error)")
         }
     }
 

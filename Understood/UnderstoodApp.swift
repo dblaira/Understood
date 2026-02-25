@@ -9,9 +9,15 @@ import SwiftUI
 
 @main
 struct UnderstoodApp: App {
+    @State private var supabase = SupabaseService.shared
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if supabase.isAuthenticated {
+                ContentView()
+            } else {
+                LoginView()
+            }
         }
     }
 }

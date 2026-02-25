@@ -1,0 +1,29 @@
+# Xcode user data
+*.xcuserstate
+xcuserdata/
+*.xcuserdatad/
+
+# Xcode workspace settings (shared data is ok)
+project.xcworkspace/xcuserdata/
+
+# Build products
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Packages/
+Package.pins
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
+# CocoaPods (not used but just in case)
+Pods/
+
+# OS files
+.DS_Store
+*.swp
+*~

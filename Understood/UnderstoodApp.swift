@@ -14,7 +14,7 @@ struct UnderstoodApp: App {
     var body: some Scene {
         WindowGroup {
             if supabase.isAuthenticated {
-                ContentView()
+                MainTabView()
             } else {
                 LoginView()
             }

@@ -20,32 +20,32 @@ struct EntryDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     // Category
                     Text(entry.category.uppercased())
-                        .font(.system(size: 11, weight: .bold))
+                        .font(Typography.sectionHeader)
                         .tracking(1.5)
-                        .foregroundStyle(Color(red: 0.86, green: 0.08, blue: 0.24))
+                        .foregroundStyle(.understoodCrimson)
 
                     // Headline
                     Text(entry.headline)
-                        .font(.system(size: 32, weight: .regular, design: .serif))
-                        .foregroundStyle(.black)
+                        .font(Typography.headline)
+                        .foregroundStyle(.textPrimary)
 
                     // Subheading
                     if let subheading = entry.subheading, !subheading.isEmpty {
                         Text(subheading)
-                            .font(.system(size: 17, weight: .regular))
-                            .foregroundStyle(.black.opacity(0.6))
+                            .font(Typography.subheading)
+                            .foregroundStyle(.textSecondary)
                     }
 
                     // Metadata row
                     HStack(spacing: 12) {
                         Text(formatDate(entry.createdAt))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.black.opacity(0.5))
+                            .font(Typography.date)
+                            .foregroundStyle(.textMetadata)
 
                         if let mood = entry.mood, !mood.isEmpty {
                             Text(mood)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(.black.opacity(0.55))
+                                .font(Typography.uiMedium)
+                                .foregroundStyle(.textSecondary)
                         }
 
                         if let metadata = entry.metadata {
@@ -60,26 +60,26 @@ struct EntryDetailView: View {
                 }
 
                 Divider()
-                    .foregroundStyle(.black.opacity(0.15))
+                    .foregroundStyle(.borderMedium)
 
                 // MARK: - Content Body
 
                 Text(stripHTML(entry.content))
-                    .font(.system(size: 16, weight: .regular))
+                    .font(Typography.body)
                     .lineSpacing(6)
-                    .foregroundStyle(.black.opacity(0.9))
+                    .foregroundStyle(.textPrimary.opacity(0.9))
 
                 // MARK: - AI Versions
 
                 if let versions = entry.versions, !versions.isEmpty {
                     Divider()
-                        .foregroundStyle(.black.opacity(0.15))
+                        .foregroundStyle(.borderMedium)
 
                     VStack(alignment: .leading, spacing: 16) {
                         Text("AI PERSPECTIVES")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(Typography.sectionHeader)
                             .tracking(1.5)
-                            .foregroundStyle(.black.opacity(0.45))
+                            .foregroundStyle(.textMuted)
 
                         // Version tabs
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -91,11 +91,12 @@ struct EntryDetailView: View {
                                         }
                                     } label: {
                                         Text(version.name)
-                                            .font(.system(size: 13, weight: .semibold))
+                                            .font(Typography.uiMedium)
+                                            .fontWeight(.semibold)
                                             .padding(.horizontal, 16)
                                             .padding(.vertical, 8)
-                                            .background(selectedVersion == index ? Color.black : Color.black.opacity(0.08))
-                                            .foregroundStyle(selectedVersion == index ? .white : .black.opacity(0.7))
+                                            .background(selectedVersion == index ? Color.black : .surfaceSubtle)
+                                            .foregroundStyle(selectedVersion == index ? .white : .textSecondary)
                                             .cornerRadius(20)
                                     }
                                 }
@@ -108,16 +109,16 @@ struct EntryDetailView: View {
 
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(version.title)
-                                    .font(.system(size: 20, weight: .regular, design: .serif))
-                                    .foregroundStyle(.black)
+                                    .font(Typography.cardHeadline)
+                                    .foregroundStyle(.textPrimary)
 
                                 Text(stripHTML(version.body ?? version.content))
-                                    .font(.system(size: 15, weight: .regular))
+                                    .font(Typography.versionBody)
                                     .lineSpacing(5)
-                                    .foregroundStyle(.black.opacity(0.85))
+                                    .foregroundStyle(.textPrimary.opacity(0.85))
                             }
                             .padding(16)
-                            .background(Color.black.opacity(0.05))
+                            .background(Color.surfaceSubtle)
                             .cornerRadius(12)
                             .transition(.opacity)
                         }
@@ -127,8 +128,8 @@ struct EntryDetailView: View {
                     VStack(spacing: 12) {
                         ProgressView()
                         Text("Generating perspectives...")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.black.opacity(0.45))
+                            .font(Typography.uiMedium)
+                            .foregroundStyle(.textMuted)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
@@ -139,13 +140,13 @@ struct EntryDetailView: View {
                 if let metadata = entry.metadata {
                     if metadata.activity != nil || metadata.trigger != nil || metadata.location != nil {
                         Divider()
-                            .foregroundStyle(.black.opacity(0.15))
+                            .foregroundStyle(.borderMedium)
 
                         VStack(alignment: .leading, spacing: 12) {
                             Text("CONTEXT")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(Typography.sectionHeader)
                                 .tracking(1.5)
-                                .foregroundStyle(.black.opacity(0.45))
+                                .foregroundStyle(.textMuted)
 
                             HStack(spacing: 8) {
                                 if let activity = metadata.activity {
@@ -164,7 +165,7 @@ struct EntryDetailView: View {
             }
             .padding(24)
         }
-        .background(Color(red: 0.96, green: 0.94, blue: 0.91).ignoresSafeArea())
+        .background(Color.understoodCream.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -224,11 +225,11 @@ struct MetadataChip: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 11, weight: .semibold))
+            .font(Typography.chipLabel)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(Color.black.opacity(0.1))
+            .background(Color.surfaceChip)
             .cornerRadius(12)
-            .foregroundStyle(.black.opacity(0.65))
+            .foregroundStyle(.textSecondary)
     }
 }

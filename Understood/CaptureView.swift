@@ -32,7 +32,7 @@ struct CaptureView: View {
         NavigationStack {
             ZStack {
                 // Background
-                Color(red: 0.96, green: 0.94, blue: 0.91)
+                Color.understoodCream
                     .ignoresSafeArea()
 
                 VStack(spacing: 0) {
@@ -46,11 +46,11 @@ struct CaptureView: View {
                                     selectedCategory = category
                                 } label: {
                                     Text(category)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(Typography.uiMedium)
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 8)
-                                        .background(selectedCategory == category ? Color.black : Color.black.opacity(0.05))
-                                        .foregroundStyle(selectedCategory == category ? .white : .black)
+                                        .background(selectedCategory == category ? Color.black : .surfaceSubtle)
+                                        .foregroundStyle(selectedCategory == category ? .white : .textPrimary)
                                         .cornerRadius(20)
                                 }
                             }
@@ -60,13 +60,13 @@ struct CaptureView: View {
                     }
 
                     Divider()
-                        .foregroundStyle(.black.opacity(0.08))
+                        .foregroundStyle(.borderLight)
 
                     // MARK: - Content Area
 
                     TextEditor(text: $content)
-                        .font(.system(size: 17))
-                        .foregroundStyle(.black)
+                        .font(Typography.editor)
+                        .foregroundStyle(.textPrimary)
                         .lineSpacing(4)
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
@@ -76,8 +76,8 @@ struct CaptureView: View {
                         .overlay(alignment: .topLeading) {
                             if content.isEmpty {
                                 Text("What happened? What are you thinking about?")
-                                    .font(.system(size: 17))
-                                    .foregroundStyle(.black.opacity(0.25))
+                                    .font(Typography.editor)
+                                    .foregroundStyle(.textPrimary.opacity(0.25))
                                     .padding(.horizontal, 21)
                                     .padding(.top, 20)
                                     .allowsHitTesting(false)
@@ -88,7 +88,7 @@ struct CaptureView: View {
 
                     if let error = errorMessage {
                         Text(error)
-                            .font(.system(size: 13))
+                            .font(Typography.small)
                             .foregroundStyle(.red)
                             .padding(.horizontal, 20)
                             .padding(.bottom, 8)
@@ -97,14 +97,14 @@ struct CaptureView: View {
             }
             .navigationTitle("Capture")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(red: 0.96, green: 0.94, blue: 0.91), for: .navigationBar)
+            .toolbarBackground(Color.understoodCream, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundStyle(.black)
+                    .foregroundStyle(.textPrimary)
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -121,7 +121,7 @@ struct CaptureView: View {
                         }
                     }
                     .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
-                    .foregroundStyle(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .black)
+                    .foregroundStyle(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .textPrimary)
                 }
             }
             .onAppear {
@@ -288,41 +288,41 @@ struct PostCaptureSheet: View {
                 VStack(spacing: 12) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 28))
-                        .foregroundStyle(Color(red: 0.86, green: 0.08, blue: 0.24))
+                        .foregroundStyle(.understoodCrimson)
 
                     if let headline = result.headline, !headline.isEmpty {
                         Text(headline)
-                            .font(.system(size: 20, weight: .light, design: .serif))
+                            .font(Typography.cardHeadlineLight)
                             .multilineTextAlignment(.center)
                     }
 
                     HStack(spacing: 12) {
                         if let category = result.category {
                             Text(category.uppercased())
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(Typography.categoryLabel)
                                 .tracking(1.5)
-                                .foregroundStyle(Color(red: 0.86, green: 0.08, blue: 0.24))
+                                .foregroundStyle(.understoodCrimson)
                         }
                         if let mood = result.mood {
                             Text(mood)
-                                .font(.system(size: 13))
-                                .foregroundStyle(.secondary)
+                                .font(Typography.info)
+                                .foregroundStyle(.textSecondary)
                         }
                     }
 
                     if result.entryType == "connection", let connectionType = result.connectionType {
                         Text("Belief detected: \(connectionType.replacingOccurrences(of: "_", with: " ").capitalized)")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(Typography.uiMedium)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(Color(red: 0.86, green: 0.08, blue: 0.24).opacity(0.1))
+                            .background(Color.understoodCrimson.opacity(0.1))
                             .cornerRadius(12)
                     }
                 }
 
                 Text("Entry saved and analyzed")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .font(Typography.small)
+                    .foregroundStyle(.textSecondary)
             }
 
             Button {

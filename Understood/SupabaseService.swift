@@ -100,6 +100,31 @@ class SupabaseService {
         return entry
     }
 
+    /// Fetch beliefs (entries with entry_type = 'connection')
+    func fetchBeliefs(limit: Int = 50) async throws -> [Entry] {
+        let beliefs: [Entry] = try await client
+            .from("entries")
+            .select()
+            .eq("entry_type", value: "connection")
+            .order("created_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        return beliefs
+    }
+
+    /// Fetch entries connected to a specific belief via source_entry_id
+    func fetchConnectedEntries(beliefId: String) async throws -> [Entry] {
+        let entries: [Entry] = try await client
+            .from("entries")
+            .select()
+            .eq("source_entry_id", value: beliefId)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+        return entries
+    }
+
     // MARK: - Entry Creation
 
     /// Create a new journal entry

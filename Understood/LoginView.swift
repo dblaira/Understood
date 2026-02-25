@@ -18,18 +18,18 @@ struct LoginView: View {
     var body: some View {
         VStack(spacing: 32) {
             Spacer()
-            
+
             // App title
             Text("Understood")
-                .font(.system(size: 48, weight: .light, design: .serif))
-                .foregroundStyle(.black)
-            
+                .font(Typography.hero)
+                .foregroundStyle(.textPrimary)
+
             Text("Capture your patterns")
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-            
+                .font(Typography.subtitle)
+                .foregroundStyle(.textSecondary)
+
             Spacer()
-            
+
             // Form fields
             VStack(spacing: 16) {
                 TextField("Email", text: $email)
@@ -39,20 +39,20 @@ struct LoginView: View {
                     .padding()
                     .background(Color(.systemGray6))
                     .cornerRadius(8)
-                
+
                 SecureField("Password", text: $password)
                     .textContentType(.password)
                     .padding()
                     .background(Color(.systemGray6))
                     .cornerRadius(8)
-                
+
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .font(Typography.caption)
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                
+
                 Button {
                     Task {
                         await signIn()
@@ -75,10 +75,10 @@ struct LoginView: View {
                 .disabled(isLoading || email.isEmpty || password.isEmpty)
             }
             .padding(.horizontal, 32)
-            
+
             Spacer()
         }
-        .background(Color(red: 0.96, green: 0.94, blue: 0.91)) // Understood cream
+        .background(Color.understoodCream)
     }
     
     private func signIn() async {

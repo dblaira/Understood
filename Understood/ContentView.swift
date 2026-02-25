@@ -12,52 +12,69 @@ struct ContentView: View {
     @State private var entries: [Entry] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var showCapture = false
+    @Binding var showCapture: Bool
+
+    /// Active belief to feature at top of feed
+    @State private var activeBelief: Entry?
 
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background color
-                Color(red: 0.96, green: 0.94, blue: 0.91)
+                Color.understoodCream
                     .ignoresSafeArea()
 
                 if isLoading {
                     ProgressView("Loading entries...")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.textSecondary)
                 } else if let error = errorMessage {
                     VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 40))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.textSecondary)
                         Text(error)
-                            .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
+                            .font(Typography.subtitle)
+                            .foregroundStyle(.textSecondary)
                             .multilineTextAlignment(.center)
                         Button("Retry") {
                             Task { await loadEntries() }
                         }
-                        .foregroundStyle(.black)
+                        .foregroundStyle(.textPrimary)
                     }
                     .padding()
                 } else if entries.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "book.pages")
                             .font(.system(size: 80))
-                            .foregroundStyle(.black.opacity(0.2))
+                            .foregroundStyle(.textPrimary.opacity(0.2))
                         Text("No entries yet")
-                            .font(.system(size: 34, weight: .light, design: .serif))
-                        Text("Your journal entries will appear here")
-                            .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
+                            .font(Typography.emptyState)
+                        Text("Tap + to capture your first entry")
+                            .font(Typography.subtitle)
+                            .foregroundStyle(.textSecondary)
                     }
                 } else {
                     List {
-                        ForEach(entries) { entry in
-                            NavigationLink(destination: EntryDetailView(entry: entry)) {
-                                EntryRow(entry: entry)
+                        // Active Belief card at top of feed
+                        if let belief = activeBelief {
+                            Section {
+                                NavigationLink(destination: BeliefDetailView(belief: belief)) {
+                                    ActiveBeliefCard(belief: belief)
+                                }
+                                .listRowBackground(Color.understoodCream)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
                             }
-                            .listRowBackground(Color(red: 0.96, green: 0.94, blue: 0.91))
-                            .listRowSeparatorTint(.black.opacity(0.1))
+                        }
+
+                        // Recent entries
+                        Section {
+                            ForEach(entries) { entry in
+                                NavigationLink(destination: EntryDetailView(entry: entry)) {
+                                    EntryRow(entry: entry)
+                                }
+                                .listRowBackground(Color.understoodCream)
+                                .listRowSeparatorTint(.surfaceChip)
+                            }
                         }
                     }
                     .listStyle(.plain)
@@ -76,27 +93,18 @@ struct ContentView: View {
                         }
                     } label: {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .foregroundStyle(.black.opacity(0.5))
+                            .foregroundStyle(.textMetadata)
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showCapture = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(.black)
-                    }
-                }
-            }
-            .fullScreenCover(isPresented: $showCapture) {
-                CaptureView(onSaved: {
-                    Task { await loadEntries() }
-                })
             }
         }
         .task {
             await loadEntries()
+        }
+        .onChange(of: showCapture) { _, isShowing in
+            if !isShowing {
+                Task { await loadEntries() }
+            }
         }
     }
 
@@ -106,12 +114,60 @@ struct ContentView: View {
 
         do {
             entries = try await supabase.fetchEntries()
+
+            // Load active belief (highest-scored connection)
+            let beliefs = try await supabase.fetchBeliefs(limit: 1)
+            activeBelief = beliefs.first
+
             isLoading = false
         } catch {
             errorMessage = "Could not load entries.\n\(error.localizedDescription)"
             isLoading = false
             print("Fetch error: \(error)")
         }
+    }
+}
+
+// MARK: - Active Belief Card
+
+struct ActiveBeliefCard: View {
+    let belief: Entry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("ACTIVE BELIEF")
+                    .font(Typography.sectionHeader)
+                    .tracking(1.5)
+                    .foregroundStyle(.understoodCrimson)
+                Spacer()
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.understoodCrimson)
+            }
+
+            Text(belief.headline)
+                .font(Typography.cardHeadline)
+                .foregroundStyle(.textPrimary)
+                .lineLimit(3)
+
+            if let connectionType = belief.connectionType {
+                Text(connectionType.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(Typography.chipLabel)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.understoodCrimson.opacity(0.1))
+                    .foregroundStyle(.understoodCrimson)
+                    .cornerRadius(12)
+            }
+        }
+        .padding(16)
+        .background(Color.surfaceSubtle)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.borderLight, lineWidth: 1)
+        )
     }
 }
 
@@ -124,26 +180,26 @@ struct EntryRow: View {
         VStack(alignment: .leading, spacing: 8) {
             // Category label
             Text(entry.category.uppercased())
-                .font(.system(size: 11, weight: .semibold))
+                .font(Typography.categoryLabel)
                 .tracking(1.5)
-                .foregroundStyle(Color(red: 0.86, green: 0.08, blue: 0.24)) // Understood crimson
+                .foregroundStyle(.understoodCrimson)
 
             // Headline
             Text(entry.headline)
-                .font(.system(size: 20, weight: .regular, design: .serif))
-                .foregroundStyle(.black)
+                .font(Typography.cardHeadline)
+                .foregroundStyle(.textPrimary)
                 .lineLimit(2)
 
             // Bottom row: date + mood
             HStack {
                 Text(formatDate(entry.createdAt))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.black.opacity(0.5))
+                    .font(Typography.date)
+                    .foregroundStyle(.textMetadata)
 
                 if let mood = entry.mood, !mood.isEmpty {
                     Text("  \(mood)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.black.opacity(0.55))
+                        .font(Typography.info)
+                        .foregroundStyle(.textSecondary)
                 }
 
                 Spacer()
@@ -157,7 +213,6 @@ struct EntryRow: View {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
         guard let date = formatter.date(from: dateString) else {
-            // Try without fractional seconds
             formatter.formatOptions = [.withInternetDateTime]
             guard let date = formatter.date(from: dateString) else {
                 return dateString
@@ -184,5 +239,5 @@ struct EntryRow: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(showCapture: .constant(false))
 }

@@ -125,6 +125,26 @@ class SupabaseService {
         return entries
     }
 
+    // MARK: - Entry Actions
+
+    /// Delete an entry by ID
+    func deleteEntry(id: String) async throws {
+        try await client
+            .from("entries")
+            .delete()
+            .eq("id", value: id)
+            .execute()
+    }
+
+    /// Toggle pinned state on an entry
+    func togglePin(id: String, pinned: Bool) async throws {
+        try await client
+            .from("entries")
+            .update(["pinned": pinned])
+            .eq("id", value: id)
+            .execute()
+    }
+
     // MARK: - Entry Creation
 
     /// Create a new journal entry

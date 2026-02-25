@@ -9,7 +9,15 @@ import SwiftUI
 
 struct EntryDetailView: View {
     let entry: Entry
+    let supabase = SupabaseService.shared
+
+    @Environment(\.dismiss) private var dismiss
     @State private var selectedVersion: Int? = nil
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+
+    /// Called after deletion so the parent can refresh
+    var onDeleted: (() -> Void)?
 
     var body: some View {
         ScrollView {
@@ -25,7 +33,7 @@ struct EntryDetailView: View {
                         .foregroundStyle(.understoodCrimson)
 
                     // Headline
-                    Text(entry.headline)
+                    Text(entry.displayHeadline)
                         .font(Typography.headline)
                         .foregroundStyle(.textPrimary)
 
@@ -162,12 +170,60 @@ struct EntryDetailView: View {
                         }
                     }
                 }
+
+                // MARK: - Delete
+
+                Divider()
+                    .foregroundStyle(.borderMedium)
+
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    HStack {
+                        Image(systemName: "trash")
+                        Text("Delete Entry")
+                    }
+                    .font(Typography.uiMedium)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.red.opacity(0.1))
+                    .foregroundStyle(.red)
+                    .cornerRadius(8)
+                }
+                .disabled(isDeleting)
             }
             .padding(24)
         }
         .background(Color.understoodCream.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Delete Entry", isPresented: $showDeleteConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task { await deleteEntry() }
+            }
+        } message: {
+            Text("This will permanently delete this entry and cannot be undone.")
+        }
     }
+
+    // MARK: - Actions
+
+    private func deleteEntry() async {
+        isDeleting = true
+        do {
+            try await supabase.deleteEntry(id: entry.id)
+            await MainActor.run {
+                onDeleted?()
+                dismiss()
+            }
+        } catch {
+            isDeleting = false
+            print("Delete error: \(error)")
+        }
+    }
+
+    // MARK: - Formatting
 
     private func formatDate(_ dateString: String) -> String {
         let formatter = ISO8601DateFormatter()
@@ -192,25 +248,20 @@ struct EntryDetailView: View {
     /// Strip HTML tags and convert to readable plain text
     private func stripHTML(_ html: String) -> String {
         var text = html
-        // Replace block-level tags with newlines
         let blockTags = ["</p>", "</h1>", "</h2>", "</h3>", "</h4>", "</li>", "</blockquote>", "<br>", "<br/>", "<br />"]
         for tag in blockTags {
             text = text.replacingOccurrences(of: tag, with: "\n", options: .caseInsensitive)
         }
-        // Add bullet for list items
         text = text.replacingOccurrences(of: "<li>", with: "\n- ", options: .caseInsensitive)
-        // Remove all remaining HTML tags
         while let range = text.range(of: "<[^>]+>", options: .regularExpression) {
             text = text.replacingCharacters(in: range, with: "")
         }
-        // Decode common HTML entities
         text = text.replacingOccurrences(of: "&amp;", with: "&")
         text = text.replacingOccurrences(of: "&lt;", with: "<")
         text = text.replacingOccurrences(of: "&gt;", with: ">")
         text = text.replacingOccurrences(of: "&quot;", with: "\"")
         text = text.replacingOccurrences(of: "&#39;", with: "'")
         text = text.replacingOccurrences(of: "&nbsp;", with: " ")
-        // Clean up excess whitespace
         while text.contains("\n\n\n") {
             text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         }

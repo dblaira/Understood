@@ -17,6 +17,16 @@ struct ContentView: View {
     /// Active belief to feature at top of feed
     @State private var activeBelief: Entry?
 
+    /// Sorted entries: pinned first, then by date
+    private var sortedEntries: [Entry] {
+        entries.sorted { a, b in
+            let aPinned = a.pinned ?? false
+            let bPinned = b.pinned ?? false
+            if aPinned != bPinned { return aPinned }
+            return a.createdAt > b.createdAt
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -66,14 +76,38 @@ struct ContentView: View {
                             }
                         }
 
-                        // Recent entries
+                        // Recent entries with swipe actions
                         Section {
-                            ForEach(entries) { entry in
-                                NavigationLink(destination: EntryDetailView(entry: entry)) {
+                            ForEach(sortedEntries) { entry in
+                                NavigationLink(destination: EntryDetailView(
+                                    entry: entry,
+                                    onDeleted: {
+                                        Task { await loadEntries() }
+                                    }
+                                )) {
                                     EntryRow(entry: entry)
                                 }
                                 .listRowBackground(Color.understoodCream)
                                 .listRowSeparatorTint(.surfaceChip)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        Task { await deleteEntry(entry) }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        Task { await togglePin(entry) }
+                                    } label: {
+                                        let isPinned = entry.pinned ?? false
+                                        Label(
+                                            isPinned ? "Unpin" : "Pin",
+                                            systemImage: isPinned ? "pin.slash.fill" : "pin.fill"
+                                        )
+                                    }
+                                    .tint(.understoodCrimson)
+                                }
                             }
                         }
                     }
@@ -108,6 +142,8 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Data
+
     private func loadEntries() async {
         isLoading = entries.isEmpty
         errorMessage = nil
@@ -124,6 +160,33 @@ struct ContentView: View {
             errorMessage = "Could not load entries.\n\(error.localizedDescription)"
             isLoading = false
             print("Fetch error: \(error)")
+        }
+    }
+
+    private func deleteEntry(_ entry: Entry) async {
+        do {
+            try await supabase.deleteEntry(id: entry.id)
+            // Remove locally for instant UI update
+            await MainActor.run {
+                entries.removeAll { $0.id == entry.id }
+            }
+        } catch {
+            print("Delete error: \(error)")
+        }
+    }
+
+    private func togglePin(_ entry: Entry) async {
+        let newPinned = !(entry.pinned ?? false)
+        do {
+            try await supabase.togglePin(id: entry.id, pinned: newPinned)
+            // Update locally for instant UI update
+            await MainActor.run {
+                if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+                    entries[index].pinned = newPinned
+                }
+            }
+        } catch {
+            print("Pin error: \(error)")
         }
     }
 }
@@ -146,7 +209,7 @@ struct ActiveBeliefCard: View {
                     .foregroundStyle(.understoodCrimson)
             }
 
-            Text(belief.headline)
+            Text(belief.displayHeadline)
                 .font(Typography.cardHeadline)
                 .foregroundStyle(.textPrimary)
                 .lineLimit(3)
@@ -178,14 +241,22 @@ struct EntryRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Category label
-            Text(entry.category.uppercased())
-                .font(Typography.categoryLabel)
-                .tracking(1.5)
-                .foregroundStyle(.understoodCrimson)
+            // Category label + pin indicator
+            HStack(spacing: 6) {
+                Text(entry.category.uppercased())
+                    .font(Typography.categoryLabel)
+                    .tracking(1.5)
+                    .foregroundStyle(.understoodCrimson)
 
-            // Headline
-            Text(entry.headline)
+                if entry.pinned == true {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.understoodCrimson)
+                }
+            }
+
+            // Headline (with fallback to content preview)
+            Text(entry.displayHeadline)
                 .font(Typography.cardHeadline)
                 .foregroundStyle(.textPrimary)
                 .lineLimit(2)

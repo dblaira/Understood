@@ -212,7 +212,7 @@ struct BeliefCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Belief text
-            Text(belief.headline)
+            Text(belief.displayHeadline)
                 .font(Typography.cardHeadline)
                 .foregroundStyle(.textPrimary)
                 .lineLimit(3)

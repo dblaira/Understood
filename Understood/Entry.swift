@@ -20,10 +20,25 @@ struct Entry: Codable, Identifiable, Hashable {
     var entryType: String?
     var connectionType: String?
     var sourceEntryId: String?
+    var pinned: Bool?
     var createdAt: String
     var updatedAt: String?
     var metadata: EntryMetadata?
-    
+
+    /// Display text: headline if present, otherwise first line of content
+    var displayHeadline: String {
+        if !headline.isEmpty { return headline }
+        let stripped = content
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = stripped.components(separatedBy: .newlines).first ?? stripped
+        if firstLine.count > 80 {
+            return String(firstLine.prefix(80)) + "..."
+        }
+        return firstLine.isEmpty ? "Untitled entry" : firstLine
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case headline
@@ -36,6 +51,7 @@ struct Entry: Codable, Identifiable, Hashable {
         case entryType = "entry_type"
         case connectionType = "connection_type"
         case sourceEntryId = "source_entry_id"
+        case pinned
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case metadata

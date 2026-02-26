@@ -34,33 +34,22 @@ struct ContentView: View {
                     .ignoresSafeArea()
 
                 if isLoading {
-                    ProgressView("Loading entries...")
-                        .foregroundStyle(.textSecondary)
+                    ScrollView {
+                        SkeletonFeed()
+                    }
                 } else if let error = errorMessage {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.textSecondary)
-                        Text(error)
-                            .font(Typography.subtitle)
-                            .foregroundStyle(.textSecondary)
-                            .multilineTextAlignment(.center)
-                        Button("Retry") {
-                            Task { await loadEntries() }
-                        }
-                        .foregroundStyle(.textPrimary)
+                    ErrorBanner(message: error) {
+                        Task { await loadEntries() }
                     }
                     .padding()
                 } else if entries.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "book.pages")
-                            .font(.system(size: 80))
-                            .foregroundStyle(Color.textPrimary.opacity(0.2))
-                        Text("No entries yet")
-                            .font(Typography.emptyState)
-                        Text("Tap + to capture your first entry")
-                            .font(Typography.subtitle)
-                            .foregroundStyle(.textSecondary)
+                    EmptyStateView(
+                        icon: "book.pages",
+                        title: "No entries yet",
+                        subtitle: "Tap + to capture your first entry",
+                        actionTitle: "Write Entry"
+                    ) {
+                        showCapture = true
                     }
                 } else {
                     List {
@@ -73,6 +62,7 @@ struct ContentView: View {
                                 .listRowBackground(Color.understoodCream)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                                .slideUp(delay: 0.1)
                             }
                         }
 
@@ -166,11 +156,14 @@ struct ContentView: View {
     private func deleteEntry(_ entry: Entry) async {
         do {
             try await supabase.deleteEntry(id: entry.id)
-            // Remove locally for instant UI update
+            Haptics.warning()
             await MainActor.run {
-                entries.removeAll { $0.id == entry.id }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    entries.removeAll { $0.id == entry.id }
+                }
             }
         } catch {
+            Haptics.error()
             print("Delete error: \(error)")
         }
     }
@@ -179,13 +172,16 @@ struct ContentView: View {
         let newPinned = !(entry.pinned ?? false)
         do {
             try await supabase.togglePin(id: entry.id, pinned: newPinned)
-            // Update locally for instant UI update
+            Haptics.medium()
             await MainActor.run {
-                if let index = entries.firstIndex(where: { $0.id == entry.id }) {
-                    entries[index].pinned = newPinned
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+                        entries[index].pinned = newPinned
+                    }
                 }
             }
         } catch {
+            Haptics.error()
             print("Pin error: \(error)")
         }
     }

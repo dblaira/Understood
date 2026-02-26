@@ -3,69 +3,98 @@
 //  Understood
 //
 //  Design system typography presets
-//  Uses system serif (Bodoni-like) until custom fonts are bundled in Phase 6
+//  Bodoni Moda for headlines, Inter for body/UI
 //
 
 import SwiftUI
 
 enum Typography {
-    // MARK: - Serif (Headlines)
 
-    /// Login/splash title — 48pt light serif
-    static let hero = Font.system(size: 48, weight: .light, design: .serif)
+    // MARK: - Helpers
 
-    /// Entry detail headline — 32pt regular serif
-    static let headline = Font.system(size: 32, weight: .regular, design: .serif)
+    /// Bodoni Moda variable font — use weight parameter for light/regular/bold
+    private static func bodoni(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        // Variable font: "BodoniModa-Regular" is the PostScript base name
+        // SwiftUI handles variable font weight axis via Font.custom + weight modifier
+        Font.custom("BodoniModa-Regular", size: size)
+    }
 
-    /// Feed row / card headline — 20pt regular serif
-    static let cardHeadline = Font.system(size: 20, weight: .regular, design: .serif)
+    /// Inter static fonts — mapped by weight
+    private static func inter(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        let name: String
+        switch weight {
+        case .bold:
+            name = "Inter-Bold"
+        case .semibold:
+            name = "Inter-SemiBold"
+        case .medium:
+            name = "Inter-Medium"
+        default:
+            name = "Inter-Regular"
+        }
+        return Font.custom(name, size: size)
+    }
 
-    /// Card headline light — 20pt light serif (for post-capture sheet)
-    static let cardHeadlineLight = Font.system(size: 20, weight: .light, design: .serif)
+    // MARK: - Serif (Headlines — Bodoni Moda)
 
-    /// Empty state title — 34pt light serif
-    static let emptyState = Font.system(size: 34, weight: .light, design: .serif)
+    /// Login/splash title — 48pt light Bodoni Moda
+    static let hero = bodoni(size: 48, weight: .light)
 
-    // MARK: - Sans-Serif (Body + UI)
+    /// Entry detail headline — 32pt Bodoni Moda
+    static let headline = bodoni(size: 32)
 
-    /// Body text — 16pt regular
-    static let body = Font.system(size: 16, weight: .regular)
+    /// Section title — 28pt Bodoni Moda
+    static let sectionTitle = bodoni(size: 28)
 
-    /// Subheading — 17pt regular
-    static let subheading = Font.system(size: 17, weight: .regular)
+    /// Feed row / card headline — 20pt Bodoni Moda
+    static let cardHeadline = bodoni(size: 20)
 
-    /// Capture text editor — 17pt regular
-    static let editor = Font.system(size: 17)
+    /// Card headline light — 20pt light Bodoni Moda
+    static let cardHeadlineLight = bodoni(size: 20, weight: .light)
 
-    /// Version body — 15pt regular
-    static let versionBody = Font.system(size: 15, weight: .regular)
+    /// Empty state title — 34pt light Bodoni Moda
+    static let emptyState = bodoni(size: 34, weight: .light)
 
-    /// UI text (buttons, pills) — 13pt medium
-    static let uiMedium = Font.system(size: 13, weight: .medium)
+    // MARK: - Sans-Serif (Body + UI — Inter)
 
-    /// Mood/secondary info — 13pt regular
-    static let info = Font.system(size: 13)
+    /// Body text — 16pt Inter
+    static let body = inter(size: 16)
 
-    /// Subtitle / supporting text — 15pt regular
-    static let subtitle = Font.system(size: 15)
+    /// Subheading — 17pt Inter
+    static let subheading = inter(size: 17)
 
-    // MARK: - Metadata (Small + Uppercase)
+    /// Capture text editor — 17pt Inter
+    static let editor = inter(size: 17)
 
-    /// Category label — 11pt semibold, pair with .tracking(1.5) and .uppercased()
-    static let categoryLabel = Font.system(size: 11, weight: .semibold)
+    /// Version body — 15pt Inter
+    static let versionBody = inter(size: 15)
 
-    /// Section header — 11pt bold, pair with .tracking(1.5) and .uppercased()
-    static let sectionHeader = Font.system(size: 11, weight: .bold)
+    /// UI text (buttons, pills) — 13pt Inter Medium
+    static let uiMedium = inter(size: 13, weight: .medium)
 
-    /// Chip label — 11pt semibold
-    static let chipLabel = Font.system(size: 11, weight: .semibold)
+    /// Mood/secondary info — 13pt Inter
+    static let info = inter(size: 13)
 
-    /// Date/metadata — 12pt medium
-    static let date = Font.system(size: 12, weight: .medium)
+    /// Subtitle / supporting text — 15pt Inter
+    static let subtitle = inter(size: 15)
+
+    // MARK: - Metadata (Small + Uppercase — Inter)
+
+    /// Category label — 11pt Inter SemiBold, pair with .tracking(1.5) and .uppercased()
+    static let categoryLabel = inter(size: 11, weight: .semibold)
+
+    /// Section header — 11pt Inter Bold, pair with .tracking(1.5) and .uppercased()
+    static let sectionHeader = inter(size: 11, weight: .bold)
+
+    /// Chip label — 11pt Inter SemiBold
+    static let chipLabel = inter(size: 11, weight: .semibold)
+
+    /// Date/metadata — 12pt Inter Medium
+    static let date = inter(size: 12, weight: .medium)
 
     /// Caption — system caption size
     static let caption = Font.caption
 
-    /// Small error/info — 13pt regular
-    static let small = Font.system(size: 13)
+    /// Small error/info — 13pt Inter
+    static let small = inter(size: 13)
 }

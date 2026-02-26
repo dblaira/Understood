@@ -20,13 +20,15 @@ struct LoginView: View {
             Spacer()
 
             // App title
-            Text("Understood")
+            Text("Understood.")
                 .font(Typography.hero)
                 .foregroundStyle(.textPrimary)
+                .slideUp(delay: 0.2)
 
             Text("Capture your patterns")
                 .font(Typography.subtitle)
                 .foregroundStyle(.textSecondary)
+                .slideUp(delay: 0.4)
 
             Spacer()
 

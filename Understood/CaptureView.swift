@@ -44,6 +44,7 @@ struct CaptureView: View {
                             ForEach(categories, id: \.self) { category in
                                 Button {
                                     selectedCategory = category
+                                    Haptics.selection()
                                 } label: {
                                     Text(category)
                                         .font(Typography.uiMedium)
@@ -178,6 +179,7 @@ struct CaptureView: View {
                 metadata: metadata
             )
             savedEntry = entry
+            Haptics.success()
 
             // 2. Trigger AI inference in parallel
             async let inferTask: () = runInference(entryId: entry.id, content: content)

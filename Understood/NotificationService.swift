@@ -8,6 +8,7 @@
 import Foundation
 import UserNotifications
 import UIKit
+import Auth
 
 @Observable
 class NotificationService: NSObject {

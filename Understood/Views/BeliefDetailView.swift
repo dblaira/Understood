@@ -200,6 +200,11 @@ struct BeliefDetailView: View {
             let (_, response) = try await URLSession.shared.data(for: request)
 
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                if action == "landed" {
+                    Haptics.success()
+                } else {
+                    Haptics.light()
+                }
                 await MainActor.run {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         actionFeedback = action
@@ -207,6 +212,7 @@ struct BeliefDetailView: View {
                 }
             }
         } catch {
+            Haptics.error()
             print("Belief response error: \(error)")
         }
     }

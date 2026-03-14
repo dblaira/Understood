@@ -21,12 +21,19 @@ struct MainTabView: View {
                     }
                     .tag(0)
 
+                ExtractionsView()
+                    .tabItem {
+                        Image(systemName: "sparkle.magnifyingglass")
+                        Text("Extractions")
+                    }
+                    .tag(1)
+
                 BeliefLibraryView()
                     .tabItem {
                         Image(systemName: "brain.head.profile")
                         Text("Beliefs")
                     }
-                    .tag(1)
+                    .tag(2)
             }
             .tint(.understoodCrimson)
 

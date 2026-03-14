@@ -7,6 +7,7 @@
 
 import Foundation
 import Supabase
+import UIKit
 
 /// Shared Supabase client for the entire app
 /// Handles authentication and database operations
@@ -300,6 +301,131 @@ class SupabaseService {
             .eq("id", value: entry.id)
             .execute()
     }
+
+    // MARK: - Extractions
+
+    /// Fetch extractions for the current user, optionally filtered by batch ID
+    func fetchExtractions(batchId: String? = nil, limit: Int = 200) async throws -> [Extraction] {
+        var query = client
+            .from("extractions")
+            .select()
+            .order("category", ascending: true)
+            .limit(limit)
+
+        if let batchId = batchId {
+            query = query.eq("batch_id", value: batchId)
+        }
+
+        let extractions: [Extraction] = try await query.execute().value
+        return extractions
+    }
+
+    /// Fetch distinct batch IDs with counts for the batch selector
+    func fetchExtractionBatches() async throws -> [(batchId: String, createdAt: String, count: Int)] {
+        let all: [Extraction] = try await client
+            .from("extractions")
+            .select()
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+
+        var batchMap: [String: (createdAt: String, count: Int)] = [:]
+        for ext in all {
+            if let existing = batchMap[ext.batchId] {
+                batchMap[ext.batchId] = (createdAt: existing.createdAt, count: existing.count + 1)
+            } else {
+                batchMap[ext.batchId] = (createdAt: ext.createdAt, count: 1)
+            }
+        }
+
+        return batchMap.map { (batchId: $0.key, createdAt: $0.value.createdAt, count: $0.value.count) }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// Trigger extraction pipeline via the Vercel API route
+    func runExtraction() async throws -> ExtractionBatchResponse {
+        guard let url = URL(string: "\(Self.apiBaseURL)/api/extract") else {
+            throw NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 300
+
+        if let token = currentSession?.accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw NSError(domain: "API", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Extraction failed with status \(statusCode)"])
+        }
+
+        return try JSONDecoder().decode(ExtractionBatchResponse.self, from: data)
+    }
+
+    // MARK: - Image Upload
+
+    /// Resize a UIImage to max width, maintaining aspect ratio
+    private func resizeImage(_ image: UIImage, maxWidth: CGFloat = 1200) -> UIImage {
+        let size = image.size
+        guard size.width > maxWidth else { return image }
+        let scale = maxWidth / size.width
+        let newSize = CGSize(width: maxWidth, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
+    /// Upload an image to Supabase Storage entry-photos bucket
+    /// Returns the public URL of the uploaded image
+    func uploadEntryImage(image: UIImage, userId: String, entryId: String, index: Int) async throws -> String {
+        // Resize to max 1200px width
+        let resized = resizeImage(image)
+
+        // Convert to JPEG data
+        guard let jpegData = resized.jpegData(compressionQuality: 0.85) else {
+            throw NSError(domain: "SupabaseService", code: 500,
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to JPEG"])
+        }
+
+        // Build file path: {userId}/{entryId}-{index}-{timestamp}.jpg
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
+        let fileName = "\(entryId)-\(index)-\(timestamp).jpg"
+        let filePath = "\(userId)/\(fileName)"
+
+        // Upload using Supabase Storage
+        try await client.storage
+            .from("entry-photos")
+            .upload(filePath, data: jpegData, options: .init(contentType: "image/jpeg", upsert: true))
+
+        // Get public URL
+        let publicUrl = try client.storage
+            .from("entry-photos")
+            .getPublicURL(path: filePath)
+
+        return publicUrl.absoluteString
+    }
+
+    /// Update an entry's images array and legacy photo_url field
+    func updateEntryImages(entryId: String, images: [EntryImage]) async throws {
+        let payload = ImagesUpdatePayload(
+            images: images,
+            photoUrl: images.first?.url,
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+        try await client
+            .from("entries")
+            .update(payload)
+            .eq("id", value: entryId)
+            .execute()
+    }
 }
 
 // MARK: - Insert/Update Payloads
@@ -323,6 +449,18 @@ struct NewEntryPayload: Encodable {
 
 struct MetadataUpdatePayload: Encodable {
     let metadata: EntryMetadata
+}
+
+struct ImagesUpdatePayload: Encodable {
+    let images: [EntryImage]
+    let photoUrl: String?
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case images
+        case photoUrl = "photo_url"
+        case updatedAt = "updated_at"
+    }
 }
 
 struct VersionsUpdatePayload: Encodable {

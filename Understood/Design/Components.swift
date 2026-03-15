@@ -57,6 +57,42 @@ struct SkeletonFeed: View {
     }
 }
 
+struct SkeletonImageEntryRow: View {
+    @State private var shimmer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Image placeholder
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.surfaceSubtle)
+                .frame(height: 200)
+
+            // Category
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.surfaceSubtle)
+                .frame(width: 70, height: 12)
+
+            // Headline
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.surfaceSubtle)
+                .frame(height: 20)
+
+            // Date
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.surfaceSubtle)
+                .frame(width: 100, height: 10)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .opacity(shimmer ? 0.4 : 1.0)
+        .animation(
+            .easeInOut(duration: 1.0).repeatForever(autoreverses: true),
+            value: shimmer
+        )
+        .onAppear { shimmer = true }
+    }
+}
+
 // MARK: - Category Badge
 
 struct CategoryBadge: View {
@@ -67,22 +103,6 @@ struct CategoryBadge: View {
             .font(Typography.categoryLabel)
             .tracking(1.5)
             .foregroundStyle(.understoodCrimson)
-    }
-}
-
-// MARK: - Metadata Chip
-
-struct MetadataChip: View {
-    let label: String
-
-    var body: some View {
-        Text(label)
-            .font(Typography.chipLabel)
-            .foregroundStyle(.textSecondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Color.surfaceChip)
-            .cornerRadius(4)
     }
 }
 
@@ -202,6 +222,51 @@ struct EmptyStateView: View {
             }
         }
         .padding(32)
+    }
+}
+
+// MARK: - Flow Layout (wrapping horizontal layout)
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = layout(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = layout(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
+                proposal: .unspecified
+            )
+        }
+    }
+
+    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var maxHeight: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth && x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+            maxHeight = max(maxHeight, y + rowHeight)
+        }
+
+        return (CGSize(width: maxWidth, height: maxHeight), positions)
     }
 }
 

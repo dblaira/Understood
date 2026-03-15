@@ -3,7 +3,7 @@
 //  Understood
 //
 //  Design system typography presets
-//  Bodoni Moda for headlines, Inter for body/UI
+//  Playfair Display for headlines, Inter for body/UI
 //
 
 import SwiftUI
@@ -12,11 +12,9 @@ enum Typography {
 
     // MARK: - Helpers
 
-    /// Bodoni Moda variable font — use weight parameter for light/regular/bold
-    private static func bodoni(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        // Variable font: "BodoniModa-Regular" is the PostScript base name
-        // SwiftUI handles variable font weight axis via Font.custom + weight modifier
-        Font.custom("BodoniModa-Regular", size: size)
+    /// Playfair Display variable font — applies weight axis via SwiftUI modifier
+    private static func playfair(size: CGFloat, weight: Font.Weight = .bold) -> Font {
+        Font.custom("PlayfairDisplay-Regular", size: size).weight(weight)
     }
 
     /// Inter static fonts — mapped by weight
@@ -35,25 +33,36 @@ enum Typography {
         return Font.custom(name, size: size)
     }
 
-    // MARK: - Serif (Headlines — Bodoni Moda)
+    // MARK: - Serif (Headlines — Playfair Display)
 
-    /// Login/splash title — 48pt light Bodoni Moda
-    static let hero = bodoni(size: 48, weight: .light)
+    /// Login/splash title — 48pt bold Playfair Display
+    static let hero = playfair(size: 48)
 
-    /// Entry detail headline — 32pt Bodoni Moda
-    static let headline = bodoni(size: 32)
+    /// Entry detail headline — 32pt bold Playfair Display
+    static let headline = playfair(size: 32)
 
-    /// Section title — 28pt Bodoni Moda
-    static let sectionTitle = bodoni(size: 28)
+    /// Section title — 28pt bold Playfair Display
+    static let sectionTitle = playfair(size: 28)
 
-    /// Feed row / card headline — 20pt Bodoni Moda
-    static let cardHeadline = bodoni(size: 20)
+    /// Feed row / card headline — 20pt bold Playfair Display
+    static let cardHeadline = playfair(size: 20)
 
-    /// Card headline light — 20pt light Bodoni Moda
-    static let cardHeadlineLight = bodoni(size: 20, weight: .light)
+    /// Card headline light - 20pt semibold Playfair Display (post-capture sheet)
+    static let cardHeadlineLight = playfair(size: 20, weight: .semibold)
 
-    /// Empty state title — 34pt light Bodoni Moda
-    static let emptyState = bodoni(size: 34, weight: .light)
+    /// Empty state title — 34pt semibold Playfair Display
+    static let emptyState = playfair(size: 34, weight: .semibold)
+
+    // MARK: - Serif (Quotes — Georgia)
+
+    /// Connection hero title — 48pt Playfair Display, regular weight (matches web clamp min)
+    static let connectionHero = playfair(size: 48, weight: .regular)
+
+    /// Belief quote text — 24pt Georgia, regular weight (matches web mobile)
+    static let beliefQuote = Font.custom("Georgia", size: 24).weight(.regular)
+
+    /// List headline — 19pt Georgia Bold (legible at small size, editorial feel)
+    static let listHeadline = Font.custom("Georgia-Bold", size: 19)
 
     // MARK: - Sans-Serif (Body + UI — Inter)
 

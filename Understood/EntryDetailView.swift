@@ -15,6 +15,7 @@ struct EntryDetailView: View {
     @State private var selectedVersion: Int? = nil
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
+    @State private var currentImagePage = 0
 
     /// Called after deletion so the parent can refresh
     var onDeleted: (() -> Void)?
@@ -22,6 +23,16 @@ struct EntryDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+
+                // MARK: - Image Gallery
+
+                if entry.hasImages {
+                    ImageGalleryView(
+                        images: entry.allImages,
+                        currentPage: $currentImagePage
+                    )
+                    .padding(.horizontal, -24) // full-bleed
+                }
 
                 // MARK: - Hero Section
 
@@ -111,24 +122,25 @@ struct EntryDetailView: View {
                             }
                         }
 
-                        // Selected version content
+                        // Selected version content — styled per voice
                         if let selected = selectedVersion, selected < versions.count {
                             let version = versions[selected]
+                            let voiceName = version.name.lowercased()
+                            let bodyText = stripHTML(version.body ?? version.content)
 
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text(version.title)
-                                    .font(Typography.cardHeadline)
-                                    .foregroundStyle(.textPrimary)
-
-                                Text(stripHTML(version.body ?? version.content))
-                                    .font(Typography.versionBody)
-                                    .lineSpacing(5)
-                                    .foregroundStyle(Color.textPrimary.opacity(0.85))
+                            if voiceName.contains("literary") {
+                                LiteraryVersionView(title: version.title, bodyText: bodyText)
+                                    .transition(.opacity)
+                            } else if voiceName.contains("news") {
+                                NewsVersionView(title: version.title, bodyText: bodyText)
+                                    .transition(.opacity)
+                            } else if voiceName.contains("poetic") || voiceName.contains("poet") {
+                                PoeticVersionView(title: version.title, bodyText: bodyText)
+                                    .transition(.opacity)
+                            } else {
+                                HumorousVersionView(title: version.title, bodyText: bodyText)
+                                    .transition(.opacity)
                             }
-                            .padding(16)
-                            .background(Color.surfaceSubtle)
-                            .cornerRadius(12)
-                            .transition(.opacity)
                         }
                     }
                 } else if entry.generatingVersions == true {
@@ -266,6 +278,288 @@ struct EntryDetailView: View {
             text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - Literary Version (Cream, Georgia serif, drop cap, decorative separator)
+
+struct LiteraryVersionView: View {
+    let title: String
+    let bodyText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Section label
+            Text("PERSONAL ESSAY")
+                .font(Typography.chipLabel)
+                .tracking(2)
+                .foregroundStyle(.voiceLiteraryTitle)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            // Body with drop cap (letter floats left, text wraps below)
+            if let firstChar = bodyText.first {
+                DropCapText(
+                    dropCap: String(firstChar),
+                    remainingText: String(bodyText.dropFirst())
+                )
+            } else {
+                Text(bodyText)
+                    .font(.custom("Georgia", size: 17))
+                    .lineSpacing(8)
+                    .foregroundStyle(.voiceLiteraryText)
+            }
+
+            // Decorative separator
+            Text("❦")
+                .font(.system(size: 20))
+                .foregroundStyle(.textMuted)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 12)
+        }
+        .padding(20)
+        .background(Color.voiceLiteraryBg)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+    }
+}
+
+// MARK: - Drop Cap (CSS float-left simulation)
+
+/// Renders a large first letter with body text wrapping below it, like Vanity Fair / literary magazines.
+/// The drop cap sits in the top-left and the first ~3 lines indent around it, then text continues full-width.
+struct DropCapText: View {
+    let dropCap: String
+    let remainingText: String
+
+    /// Drop cap metrics — sized to span exactly 3 body-text lines
+    /// Body line height ≈ 25pt (17pt Georgia + 8pt lineSpacing), so 3 lines ≈ 75pt
+    private let capSize: CGFloat = 82
+    private let capWidth: CGFloat = 58
+    private let capLineHeight: CGFloat = 82
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Drop cap letter — offset up to eat the font's built-in ascender space
+            Text(dropCap)
+                .font(.custom("Georgia-Bold", size: capSize))
+                .foregroundStyle(.voiceLiteraryDropCap)
+                .frame(width: capWidth, height: capLineHeight, alignment: .topLeading)
+                .clipped()
+                .offset(y: -12)
+
+            // Body text with indented first lines wrapping around the cap
+            VStack(alignment: .leading, spacing: 0) {
+                // Indented portion (wraps beside the drop cap)
+                Text(remainingText)
+                    .font(.custom("Georgia", size: 17))
+                    .lineSpacing(8)
+                    .foregroundStyle(.voiceLiteraryText)
+                    .padding(.leading, capWidth + 6)
+                    .lineLimit(3)
+
+                // Remaining text (full width, below the drop cap)
+                let indentedChars = estimateIndentedCharCount()
+                if remainingText.count > indentedChars {
+                    Text(String(remainingText.dropFirst(indentedChars)))
+                        .font(.custom("Georgia", size: 17))
+                        .lineSpacing(8)
+                        .foregroundStyle(.voiceLiteraryText)
+                        .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    /// Estimate how many characters fit in ~3 indented lines beside the wider drop cap
+    private func estimateIndentedCharCount() -> Int {
+        // Wider cap (58pt + 6pt gap = 64pt indent) leaves ~28 chars per line at 17pt Georgia
+        // 3 indented lines × ~28 chars = ~84 chars
+        min(remainingText.count, 84)
+    }
+}
+
+// MARK: - News Version (Gray, bold Playfair headline, double border)
+
+struct NewsVersionView: View {
+    let title: String
+    let bodyText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Section label
+            Text("SPECIAL REPORT")
+                .font(Typography.chipLabel)
+                .tracking(2)
+                .foregroundStyle(.voiceNewsTitle)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.bottom, 12)
+
+            // Headline with double border
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(height: 2)
+                Text(title.uppercased())
+                    .font(Typography.sectionTitle)
+                    .fontWeight(.black)
+                    .multilineTextAlignment(.center)
+                    .tracking(-0.3)
+                    .foregroundStyle(.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(height: 0.5)
+                    .padding(.bottom, 1)
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(height: 2)
+            }
+            .padding(.bottom, 16)
+
+            // Body text
+            Text(bodyText)
+                .font(.custom("Georgia", size: 15))
+                .lineSpacing(5)
+                .foregroundStyle(.textPrimary)
+        }
+        .padding(20)
+        .background(Color.voiceNewsBg)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.borderLight, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Poetic Version (Parchment, italic centered Georgia, airy spacing)
+
+struct PoeticVersionView: View {
+    let title: String
+    let bodyText: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // Section label
+            Text("VERSE")
+                .font(Typography.chipLabel)
+                .tracking(3)
+                .foregroundStyle(.voicePoeticTitle)
+
+            // Body — italic, centered, airy
+            Text(bodyText)
+                .font(.custom("Georgia", size: 17))
+                .italic()
+                .multilineTextAlignment(.center)
+                .lineSpacing(12)
+                .tracking(0.3)
+                .foregroundStyle(.voicePoeticText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 28)
+        .background(Color.voicePoeticBg)
+        .cornerRadius(12)
+        .shadow(color: Color(red: 0.545, green: 0.271, blue: 0.075).opacity(0.08), radius: 16, x: 0, y: 4)
+    }
+}
+
+// MARK: - Humorous / Fallback Version (Light green, green left border)
+
+struct HumorousVersionView: View {
+    let title: String
+    let bodyText: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Green left border
+            Rectangle()
+                .fill(Color.voiceHumorousBorder)
+                .frame(width: 4)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title)
+                    .font(Typography.cardHeadline)
+                    .foregroundStyle(.voiceHumorousTitle)
+
+                Text(bodyText)
+                    .font(Typography.versionBody)
+                    .lineSpacing(6)
+                    .foregroundStyle(.voiceHumorousText)
+            }
+            .padding(16)
+        }
+        .background(Color.voiceHumorousBg)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Image Gallery
+
+struct ImageGalleryView: View {
+    let images: [EntryImage]
+    @Binding var currentPage: Int
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            TabView(selection: $currentPage) {
+                ForEach(Array(images.enumerated()), id: \.offset) { index, entryImage in
+                    AsyncImage(url: URL(string: entryImage.url)) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(height: 280)
+                                .clipped()
+                        case .failure:
+                            ZStack {
+                                Color.surfaceSubtle
+                                VStack(spacing: 8) {
+                                    Image(systemName: "photo")
+                                        .font(.system(size: 32))
+                                        .foregroundStyle(.textMuted)
+                                    Text("Failed to load")
+                                        .font(Typography.small)
+                                        .foregroundStyle(.textMuted)
+                                }
+                            }
+                            .frame(height: 280)
+                        case .empty:
+                            ZStack {
+                                Color.surfaceSubtle
+                                ProgressView()
+                                    .scaleEffect(1.2)
+                            }
+                            .frame(height: 280)
+                        @unknown default:
+                            Color.surfaceSubtle
+                                .frame(height: 280)
+                        }
+                    }
+                    .tag(index)
+                }
+            }
+            .frame(height: 280)
+            .tabViewStyle(.page(indexDisplayMode: .never))
+
+            // Page indicator (only for multi-image entries)
+            if images.count > 1 {
+                HStack(spacing: 0) {
+                    Spacer()
+                    Text("\(currentPage + 1) / \(images.count)")
+                        .font(Typography.uiMedium)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.6))
+                        .cornerRadius(12)
+                        .padding(12)
+                }
+            }
+        }
     }
 }
 

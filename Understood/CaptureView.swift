@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import PhotosUI
+import Auth
 
 struct CaptureView: View {
     @Environment(\.dismiss) private var dismiss
@@ -15,6 +17,10 @@ struct CaptureView: View {
     @State private var content = ""
     @State private var selectedCategory = "Business"
     @FocusState private var isContentFocused: Bool
+
+    // Photo state
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var selectedImages: [UIImage] = []
 
     // Save state
     @State private var isSaving = false
@@ -62,6 +68,77 @@ struct CaptureView: View {
 
                     Divider()
                         .foregroundStyle(.borderLight)
+
+                    // MARK: - Photo Attachment Bar
+
+                    HStack(spacing: 12) {
+                        PhotosPicker(
+                            selection: $selectedPhotoItems,
+                            maxSelectionCount: Entry.maxImagesPerEntry,
+                            matching: .images,
+                            photoLibrary: .shared()
+                        ) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "photo.on.rectangle.angled")
+                                    .font(.system(size: 14))
+                                if selectedImages.isEmpty {
+                                    Text("Add Photos")
+                                        .font(Typography.uiMedium)
+                                } else {
+                                    Text("\(selectedImages.count)/\(Entry.maxImagesPerEntry)")
+                                        .font(Typography.uiMedium)
+                                }
+                            }
+                            .foregroundStyle(.textSecondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.surfaceSubtle)
+                            .cornerRadius(16)
+                        }
+                        .onChange(of: selectedPhotoItems) { _, items in
+                            Task { await loadSelectedPhotos(items) }
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+
+                    // MARK: - Selected Image Previews
+
+                    if !selectedImages.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
+                                    ZStack(alignment: .topTrailing) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 72, height: 72)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                        // Remove button
+                                        Button {
+                                            withAnimation(.easeInOut(duration: 0.2)) {
+                                                selectedImages.remove(at: index)
+                                                if index < selectedPhotoItems.count {
+                                                    selectedPhotoItems.remove(at: index)
+                                                }
+                                            }
+                                            Haptics.light()
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 18))
+                                                .foregroundStyle(.white, .black.opacity(0.6))
+                                        }
+                                        .offset(x: 4, y: -4)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        .padding(.bottom, 8)
+                    }
 
                     // MARK: - Content Area
 
@@ -142,6 +219,21 @@ struct CaptureView: View {
         }
     }
 
+    // MARK: - Photo Loading
+
+    private func loadSelectedPhotos(_ items: [PhotosPickerItem]) async {
+        var newImages: [UIImage] = []
+        for item in items {
+            if let data = try? await item.loadTransferable(type: Data.self),
+               let image = UIImage(data: data) {
+                newImages.append(image)
+            }
+        }
+        await MainActor.run {
+            selectedImages = newImages
+        }
+    }
+
     // MARK: - Save Logic
 
     private func saveEntry() async {
@@ -172,7 +264,7 @@ struct CaptureView: View {
         )
 
         do {
-            // 1. Save to Supabase
+            // 1. Save to Supabase (text only, get entry ID)
             let entry = try await supabase.createEntry(
                 content: content,
                 category: selectedCategory,
@@ -181,23 +273,32 @@ struct CaptureView: View {
             savedEntry = entry
             Haptics.success()
 
-            // 2. Trigger AI inference in parallel
+            // 2. Upload images in background (parallel with inference)
+            let imagesToUpload = selectedImages
+            if !imagesToUpload.isEmpty {
+                Task {
+                    await uploadImages(entryId: entry.id, images: imagesToUpload)
+                    onSaved?() // Refresh feed after images uploaded
+                }
+            }
+
+            // 3. Trigger AI inference in parallel
             async let inferTask: () = runInference(entryId: entry.id, content: content)
             async let enrichTask: () = runEnrichment(entryId: entry.id, content: content, timeOfDay: timeOfDay, dayOfWeek: dayOfWeek)
 
             // Wait for inference and enrichment
             _ = try? await (inferTask, enrichTask)
 
-            // 3. Trigger version generation in background (takes ~30-60 seconds)
+            // 4. Trigger version generation in background
             Task {
                 await runVersionGeneration(entry: entry)
-                onSaved?() // Refresh feed when versions are ready
+                onSaved?()
             }
 
-            // 4. Notify feed to refresh (shows entry immediately, versions come later)
+            // 5. Notify feed to refresh
             onSaved?()
 
-            // 5. Show post-capture sheet or dismiss
+            // 6. Show post-capture sheet or dismiss
             await MainActor.run {
                 isSaving = false
                 if inferenceResult != nil {
@@ -215,6 +316,44 @@ struct CaptureView: View {
             print("Save error: \(error)")
         }
     }
+
+    // MARK: - Image Upload
+
+    private func uploadImages(entryId: String, images: [UIImage]) async {
+        guard let userId = supabase.currentSession?.user.id.uuidString else { return }
+
+        var entryImages: [EntryImage] = []
+
+        for (index, image) in images.enumerated() {
+            do {
+                let url = try await supabase.uploadEntryImage(
+                    image: image,
+                    userId: userId,
+                    entryId: entryId,
+                    index: index
+                )
+                let entryImage = EntryImage(
+                    url: url,
+                    isPoster: index == 0,
+                    order: index
+                )
+                entryImages.append(entryImage)
+            } catch {
+                print("Image upload error for index \(index): \(error)")
+            }
+        }
+
+        // Update the entry with the images array
+        if !entryImages.isEmpty {
+            do {
+                try await supabase.updateEntryImages(entryId: entryId, images: entryImages)
+            } catch {
+                print("Failed to update entry images: \(error)")
+            }
+        }
+    }
+
+    // MARK: - AI Processing
 
     private func runInference(entryId: String, content: String) async {
         do {
@@ -283,10 +422,7 @@ struct PostCaptureSheet: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // Drag indicator is handled by .presentationDragIndicator
-
             if let result = inferenceResult {
-                // Show what the AI inferred
                 VStack(spacing: 12) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 28))

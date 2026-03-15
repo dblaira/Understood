@@ -7,8 +7,31 @@
 
 import Foundation
 
+// MARK: - Entry Image
+
+/// Image attached to an entry (matches web app's EntryImage type)
+struct EntryImage: Codable, Hashable {
+    let url: String
+    var isPoster: Bool
+    var order: Int
+    var focalX: Double?
+    var focalY: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case isPoster = "is_poster"
+        case order
+        case focalX = "focal_x"
+        case focalY = "focal_y"
+    }
+}
+
+// MARK: - Entry
+
 /// Matches the Entry type from the web app
 struct Entry: Codable, Identifiable, Hashable {
+    static let maxImagesPerEntry = 6
+
     let id: String
     var headline: String
     var category: String
@@ -25,6 +48,11 @@ struct Entry: Codable, Identifiable, Hashable {
     var updatedAt: String?
     var metadata: EntryMetadata?
 
+    // Image fields
+    var images: [EntryImage]?
+    var photoUrl: String?
+    var imageUrl: String?
+
     /// Display text: headline if present, otherwise first line of content
     var displayHeadline: String {
         if !headline.isEmpty { return headline }
@@ -37,6 +65,31 @@ struct Entry: Codable, Identifiable, Hashable {
             return String(firstLine.prefix(80)) + "..."
         }
         return firstLine.isEmpty ? "Untitled entry" : firstLine
+    }
+
+    /// Poster image URL (checks images array, then legacy fields)
+    var posterImageUrl: String? {
+        if let images = images, !images.isEmpty {
+            let poster = images.first(where: { $0.isPoster }) ?? images[0]
+            return poster.url
+        }
+        return imageUrl ?? photoUrl
+    }
+
+    /// All images (converts legacy single-image to array format)
+    var allImages: [EntryImage] {
+        if let images = images, !images.isEmpty {
+            return images.sorted { $0.order < $1.order }
+        }
+        if let url = imageUrl ?? photoUrl {
+            return [EntryImage(url: url, isPoster: true, order: 0)]
+        }
+        return []
+    }
+
+    /// Whether this entry has any images
+    var hasImages: Bool {
+        posterImageUrl != nil
     }
 
     enum CodingKeys: String, CodingKey {
@@ -55,6 +108,9 @@ struct Entry: Codable, Identifiable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case metadata
+        case images
+        case photoUrl = "photo_url"
+        case imageUrl = "image_url"
     }
 }
 

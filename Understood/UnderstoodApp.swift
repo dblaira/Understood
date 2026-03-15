@@ -40,12 +40,14 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 struct UnderstoodApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var supabase = SupabaseService.shared
+    @State private var nav = AppNavigationState()
     @State private var showNotificationPrompt = false
 
     var body: some Scene {
         WindowGroup {
             if supabase.isAuthenticated {
                 MainTabView()
+                    .environment(nav)
                     .task {
                         await NotificationService.shared.checkPermission()
                         if !NotificationService.shared.hasAskedPermission {

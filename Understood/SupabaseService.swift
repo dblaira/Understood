@@ -304,20 +304,40 @@ class SupabaseService {
 
     // MARK: - Extractions
 
-    /// Fetch extractions for the current user, optionally filtered by batch ID
-    func fetchExtractions(batchId: String? = nil, limit: Int = 200) async throws -> [Extraction] {
-        var query = client
+    /// Fetch all extractions across every batch for map aggregation
+    func fetchAllExtractions() async throws -> [Extraction] {
+        let extractions: [Extraction] = try await client
             .from("extractions")
             .select()
-            .order("category", ascending: true)
-            .limit(limit)
-
-        if let batchId = batchId {
-            query = query.eq("batch_id", value: batchId)
-        }
-
-        let extractions: [Extraction] = try await query.execute().value
+            .order("created_at", ascending: false)
+            .limit(5000)
+            .execute()
+            .value
         return extractions
+    }
+
+    /// Fetch extractions for the current user, optionally filtered by batch ID
+    func fetchExtractions(batchId: String? = nil, limit: Int = 200) async throws -> [Extraction] {
+        if let batchId = batchId {
+            let extractions: [Extraction] = try await client
+                .from("extractions")
+                .select()
+                .eq("batch_id", value: batchId)
+                .order("category", ascending: true)
+                .limit(limit)
+                .execute()
+                .value
+            return extractions
+        } else {
+            let extractions: [Extraction] = try await client
+                .from("extractions")
+                .select()
+                .order("category", ascending: true)
+                .limit(limit)
+                .execute()
+                .value
+            return extractions
+        }
     }
 
     /// Fetch distinct batch IDs with counts for the batch selector

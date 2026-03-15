@@ -10,7 +10,13 @@ import SwiftUI
 struct ExtractionsView: View {
     let supabase = SupabaseService.shared
 
+    private enum ViewMode { case map, cards }
+
+    @State private var viewMode: ViewMode = .map
     @State private var extractions: [Extraction] = []
+    @State private var allExtractions: [Extraction] = []
+    @State private var mapNodes: [MapNode] = []
+    @State private var selectedMapNode: MapNode?
     @State private var batches: [(batchId: String, createdAt: String, count: Int)] = []
     @State private var activeBatchId: String?
     @State private var isLoading = true
@@ -19,68 +25,162 @@ struct ExtractionsView: View {
     @State private var errorMessage: String?
     @State private var expandedCategories: Set<String> = []
 
+    /// Extractions shown in cards mode — filtered by selected map node when applicable
+    private var displayExtractions: [Extraction] {
+        guard let node = selectedMapNode else { return extractions }
+        if node.type == .category {
+            return allExtractions.filter { $0.category == node.category }
+        }
+        return allExtractions.filter { ext in
+            guard ext.category == node.category else { return false }
+            return ext.data.values.contains { val in
+                if case .string(let s) = val { return s.lowercased() == node.label }
+                return false
+            }
+        }
+    }
+
     /// Extractions grouped by category
     private var grouped: [(category: String, items: [Extraction])] {
         var map: [String: [Extraction]] = [:]
-        for ext in extractions {
+        for ext in displayExtractions {
             map[ext.category, default: []].append(ext)
         }
         return map.sorted { $0.key < $1.key }.map { (category: $0.key, items: $0.value) }
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.understoodCream
-                    .ignoresSafeArea()
+        ZStack {
+            (viewMode == .map ? Color.understoodBeige : Color.understoodCream)
+                .ignoresSafeArea()
 
-                if isLoading {
-                    ProgressView("Loading extractions...")
-                        .foregroundStyle(.textSecondary)
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            // Summary banner
-                            summaryBanner
+            if isLoading {
+                ProgressView("Loading extractions...")
+                    .foregroundStyle(.textSecondary)
+            } else if viewMode == .map {
+                mapView
+            } else {
+                cardsView
+            }
+        }
+        .task {
+            await loadData()
+        }
+    }
 
-                            // Run result feedback
-                            if let result = runResult {
-                                resultBanner(result)
-                            }
+    // MARK: - Custom Header (matches Connections page)
 
-                            // Error
-                            if let error = errorMessage {
-                                errorBanner(error)
-                            }
+    private var extractionsHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top) {
+                ZStack {
+                    ForEach([
+                        (x: 0.6, y: 0.0),
+                        (x: -0.6, y: 0.0),
+                        (x: 0.0, y: 0.6),
+                        (x: 0.0, y: -0.6)
+                    ], id: \.x) { offset in
+                        Text("Extractions")
+                            .font(Typography.connectionHero)
+                            .tracking(-0.5)
+                            .foregroundStyle(.understoodCrimson)
+                            .offset(x: offset.x, y: offset.y)
+                    }
+                    Text("Extractions")
+                        .font(Typography.connectionHero)
+                        .tracking(-0.5)
+                        .foregroundStyle(.understoodCrimson)
+                }
 
-                            // Empty state
-                            if extractions.isEmpty && !isRunning {
-                                emptyState
-                            }
+                Spacer()
 
-                            // Running state
-                            if isRunning && extractions.isEmpty {
-                                runningState
-                            }
-
-                            // Category groups
-                            ForEach(grouped, id: \.category) { group in
-                                categorySection(group.category, items: group.items)
-                            }
-                        }
+                Button {
+                    Task { await runExtraction() }
+                } label: {
+                    if isRunning {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    } else {
+                        Text("Extract")
+                            .font(Typography.uiMedium)
+                            .foregroundStyle(.understoodCrimson)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.8))
+                            .clipShape(Capsule())
                     }
                 }
+                .disabled(isRunning)
+                .padding(.top, 8)
             }
-            .navigationTitle("Extractions")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+
+            Text("Tap a circle to explore patterns")
+                .font(Typography.date)
+                .tracking(1)
+                .foregroundStyle(.textMetadata)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: - Map View
+
+    private var mapView: some View {
+        VStack(spacing: 0) {
+            extractionsHeader
+
+            if allExtractions.isEmpty && !isRunning {
+                emptyState
+            } else if isRunning && allExtractions.isEmpty {
+                runningState
+            } else {
+                InfluenceMapView(nodes: mapNodes) { node in
+                    selectedMapNode = node
+                    expandedCategories = Set([node.category])
+                    withAnimation { viewMode = .cards }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            if let result = runResult {
+                resultBanner(result)
+            }
+            if let error = errorMessage {
+                errorBanner(error)
+            }
+        }
+    }
+
+    // MARK: - Cards View
+
+    private var cardsView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Button {
+                        withAnimation { viewMode = .map }
+                        selectedMapNode = nil
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Influence Map")
+                                .font(Typography.uiMedium)
+                        }
+                        .foregroundStyle(.textSecondary)
+                    }
+
+                    Spacer()
+
                     Button {
                         Task { await runExtraction() }
                     } label: {
                         if isRunning {
-                            ProgressView()
-                                .controlSize(.small)
+                            ProgressView().controlSize(.small)
                         } else {
                             Text("Extract")
                                 .font(Typography.uiMedium)
@@ -89,9 +189,21 @@ struct ExtractionsView: View {
                     }
                     .disabled(isRunning)
                 }
-            }
-            .task {
-                await loadData()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+
+                summaryBanner
+
+                if let result = runResult {
+                    resultBanner(result)
+                }
+                if let error = errorMessage {
+                    errorBanner(error)
+                }
+
+                ForEach(grouped, id: \.category) { group in
+                    categorySection(group.category, items: group.items)
+                }
             }
         }
     }
@@ -239,14 +351,14 @@ struct ExtractionsView: View {
             }
 
             // Key-value data
-            let sortedData = ext.data.sorted { $0.key < $1.key }
+            let sortedKeys = ext.data.keys.sorted()
             FlowLayout(spacing: 12) {
-                ForEach(sortedData, id: \.key) { key, value in
+                ForEach(sortedKeys, id: \.self) { key in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(key)
                             .font(Typography.chipLabel)
                             .foregroundStyle(.textMuted)
-                        Text(value.displayString)
+                        Text(ext.data[key]?.displayString ?? "")
                             .font(Typography.body)
                             .foregroundStyle(.textPrimary)
                     }
@@ -255,7 +367,7 @@ struct ExtractionsView: View {
 
             // Source text
             if let source = ext.sourceText, !source.isEmpty {
-                Text(""\(source)"")
+                Text("\"\(source)\"")
                     .font(Typography.info)
                     .foregroundStyle(.textSecondary)
                     .italic()
@@ -377,7 +489,13 @@ struct ExtractionsView: View {
     private func loadData() async {
         isLoading = true
         do {
-            batches = try await supabase.fetchExtractionBatches()
+            async let batchTask = supabase.fetchExtractionBatches()
+            async let allTask = supabase.fetchAllExtractions()
+
+            batches = try await batchTask
+            allExtractions = try await allTask
+            mapNodes = ExtractionAggregator.aggregate(allExtractions)
+
             if let first = batches.first {
                 activeBatchId = first.batchId
                 extractions = try await supabase.fetchExtractions(batchId: first.batchId)
@@ -413,50 +531,14 @@ struct ExtractionsView: View {
         }
         isRunning = false
     }
-}
 
-// MARK: - Flow Layout (wrapping horizontal layout for key-value pairs)
-
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposableSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let result = layout(proposal: proposal, subviews: subviews)
-        return result.size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposableSize, subviews: Subviews, cache: inout ()) {
-        let result = layout(proposal: proposal, subviews: subviews)
-        for (index, position) in result.positions.enumerated() {
-            subviews[index].place(
-                at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
-                proposal: .unspecified
-            )
+    /// Summary line for cards mode header
+    private var cardsSummaryText: String {
+        if let node = selectedMapNode {
+            let prefix = node.type == .concept ? "\"\(node.label)\" in " : ""
+            return "Showing \(prefix)\(node.category)"
         }
-    }
-
-    private func layout(proposal: ProposableSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
-        let maxWidth = proposal.width ?? .infinity
-        var positions: [CGPoint] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var maxHeight: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > maxWidth && x > 0 {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            positions.append(CGPoint(x: x, y: y))
-            rowHeight = max(rowHeight, size.height)
-            x += size.width + spacing
-            maxHeight = max(maxHeight, y + rowHeight)
-        }
-
-        return (CGSize(width: maxWidth, height: maxHeight), positions)
+        return "\(displayExtractions.count) extractions"
     }
 }
 

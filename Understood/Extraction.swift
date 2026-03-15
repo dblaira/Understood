@@ -10,7 +10,7 @@ import Foundation
 struct Extraction: Codable, Identifiable, Hashable {
     let id: String
     let userId: String
-    let entryId: String
+    let entryId: String?
     let category: String
     let data: [String: ExtractionValue]
     let confidence: Double

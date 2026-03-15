@@ -13,6 +13,9 @@ struct BeliefLibraryView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
 
+    /// Life area filter passed from navigation state
+    var lifeAreaFilter: String = "all"
+
     /// The four belief types from the scoring engine
     private let beliefTypes = [
         ("identity_anchor", "Identity Anchors", "shield.fill"),
@@ -21,83 +24,85 @@ struct BeliefLibraryView: View {
         ("process_anchor", "Process Anchors", "list.bullet.rectangle.fill")
     ]
 
+    /// Filtered beliefs based on life area
+    private var filteredBeliefs: [Entry] {
+        guard lifeAreaFilter != "all" else { return beliefs }
+        return beliefs.filter { $0.category.lowercased() == lifeAreaFilter.lowercased() }
+    }
+
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.understoodCream
-                    .ignoresSafeArea()
+        ZStack {
+            Color.understoodCream
+                .ignoresSafeArea()
 
-                if isLoading {
-                    ProgressView("Loading beliefs...")
+            if isLoading {
+                ProgressView("Loading beliefs...")
+                    .foregroundStyle(.textSecondary)
+            } else if let error = errorMessage {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
                         .foregroundStyle(.textSecondary)
-                } else if let error = errorMessage {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.textSecondary)
-                        Text(error)
-                            .font(Typography.subtitle)
-                            .foregroundStyle(.textSecondary)
-                            .multilineTextAlignment(.center)
-                        Button("Retry") {
-                            Task { await loadBeliefs() }
-                        }
-                        .foregroundStyle(.textPrimary)
+                    Text(error)
+                        .font(Typography.subtitle)
+                        .foregroundStyle(.textSecondary)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") {
+                        Task { await loadBeliefs() }
                     }
-                    .padding()
-                } else if beliefs.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "brain.head.profile")
-                            .font(.system(size: 80))
-                            .foregroundStyle(Color.textPrimary.opacity(0.2))
-                        Text("No beliefs yet")
-                            .font(Typography.emptyState)
-                        Text("As you capture entries, the AI will\nidentify your underlying beliefs")
-                            .font(Typography.subtitle)
-                            .foregroundStyle(.textSecondary)
-                            .multilineTextAlignment(.center)
-                    }
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 24) {
-                            // Summary stats
-                            BeliefSummaryBar(beliefs: beliefs)
-                                .padding(.horizontal, 20)
+                    .foregroundStyle(.textPrimary)
+                }
+                .padding()
+            } else if filteredBeliefs.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 80))
+                        .foregroundStyle(Color.textPrimary.opacity(0.2))
+                    Text("No beliefs yet")
+                        .font(Typography.emptyState)
+                    Text("As you capture entries, the AI will\nidentify your underlying beliefs")
+                        .font(Typography.subtitle)
+                        .foregroundStyle(.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 24) {
+                        // Summary stats
+                        BeliefSummaryBar(beliefs: filteredBeliefs)
+                            .padding(.horizontal, 20)
 
-                            // Grouped by type
-                            ForEach(beliefTypes, id: \.0) { type, title, icon in
-                                let filtered = beliefs.filter { $0.connectionType == type }
-                                if !filtered.isEmpty {
-                                    BeliefSection(
-                                        title: title,
-                                        icon: icon,
-                                        beliefs: filtered
-                                    )
-                                }
-                            }
-
-                            // Uncategorized beliefs
-                            let uncategorized = beliefs.filter { belief in
-                                guard let type = belief.connectionType else { return true }
-                                return !beliefTypes.contains(where: { $0.0 == type })
-                            }
-                            if !uncategorized.isEmpty {
+                        // Grouped by type
+                        ForEach(beliefTypes, id: \.0) { type, title, icon in
+                            let filtered = filteredBeliefs.filter { $0.connectionType == type }
+                            if !filtered.isEmpty {
                                 BeliefSection(
-                                    title: "Other Beliefs",
-                                    icon: "lightbulb.fill",
-                                    beliefs: uncategorized
+                                    title: title,
+                                    icon: icon,
+                                    beliefs: filtered
                                 )
                             }
-
-                            // Bottom spacer for tab bar
-                            Spacer().frame(height: 80)
                         }
-                        .padding(.top, 16)
+
+                        // Uncategorized beliefs
+                        let uncategorized = filteredBeliefs.filter { belief in
+                            guard let type = belief.connectionType else { return true }
+                            return !beliefTypes.contains(where: { $0.0 == type })
+                        }
+                        if !uncategorized.isEmpty {
+                            BeliefSection(
+                                title: "Other Beliefs",
+                                icon: "lightbulb.fill",
+                                beliefs: uncategorized
+                            )
+                        }
+
+                        // Bottom spacer for FAB
+                        Spacer().frame(height: 80)
                     }
+                    .padding(.top, 16)
                 }
             }
-            .navigationTitle("Beliefs")
-            .navigationBarTitleDisplayMode(.inline)
         }
         .task {
             await loadBeliefs()
@@ -272,5 +277,7 @@ struct BeliefCard: View {
 }
 
 #Preview {
-    BeliefLibraryView()
+    NavigationStack {
+        BeliefLibraryView(lifeAreaFilter: "all")
+    }
 }

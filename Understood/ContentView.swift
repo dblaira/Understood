@@ -2,7 +2,7 @@
 //  ContentView.swift
 //  Understood
 //
-//  Created by Adam Blair on 2/24/26.
+//  Three-layer editorial Stories view: Hero, Carousel, Category + Pinned layout
 //
 
 import SwiftUI
@@ -10,24 +10,53 @@ import Auth
 
 struct ContentView: View {
     let supabase = SupabaseService.shared
+    @Environment(AppNavigationState.self) private var nav
+
     @State private var entries: [Entry] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var beliefs: [Entry] = []
+    @State private var featuredEntry: Entry?
+    @State private var pinnedEntries: [Entry] = []
 
-    /// Life area filter passed from navigation state
     var lifeAreaFilter: String = "all"
 
-    /// Beliefs for carousel (up to 6)
-    @State private var beliefs: [Entry] = []
+    private var stories: [Entry] {
+        let filtered = entries.filter { $0.isStory }
+        guard lifeAreaFilter != "all" else { return filtered }
+        return filtered.filter { $0.category.lowercased() == lifeAreaFilter.lowercased() }
+    }
 
-    /// User-reorderable entry list
-    @State private var orderedEntries: [Entry] = []
-    @State private var isEditingOrder = false
+    private var heroStory: Entry? {
+        featuredEntry ?? stories.first
+    }
 
-    /// Filtered entries based on life area
-    private var filteredEntries: [Entry] {
-        guard lifeAreaFilter != "all" else { return orderedEntries }
-        return orderedEntries.filter { $0.category.lowercased() == lifeAreaFilter.lowercased() }
+    private var carouselStories: [Entry] {
+        let skip = heroStory?.id
+        return Array(stories.filter { $0.id != skip }.prefix(10))
+    }
+
+    private let categories = ["Business", "Finance", "Health", "Spiritual", "Fun", "Social", "Romance"]
+
+    private var latestByCategory: [(category: String, entry: Entry)] {
+        categories.compactMap { cat in
+            if let entry = stories.first(where: { $0.category.lowercased() == cat.lowercased() }) {
+                return (cat, entry)
+            }
+            return nil
+        }
+    }
+
+    private var pinnedStories: [Entry] {
+        pinnedEntries.filter { $0.isStory }
+    }
+
+    private var pinnedNotes: [Entry] {
+        pinnedEntries.filter { $0.isNote }
+    }
+
+    private var pinnedActions: [Entry] {
+        pinnedEntries.filter { $0.isAction }
     }
 
     var body: some View {
@@ -36,9 +65,7 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             if isLoading {
-                ScrollView {
-                    SkeletonFeed()
-                }
+                ScrollView { SkeletonFeed() }
             } else if let error = errorMessage {
                 ErrorBanner(message: error) {
                     Task { await loadEntries() }
@@ -47,86 +74,122 @@ struct ContentView: View {
             } else if entries.isEmpty {
                 EmptyStateView(
                     icon: "book.pages",
-                    title: "No entries yet",
-                    subtitle: "Tap + to capture your first entry"
+                    title: "Write your first headline",
+                    subtitle: "Your personal newsroom starts with one entry.",
+                    actionTitle: "Create Entry",
+                    onAction: { nav.showCapture = true }
                 )
             } else {
-                List {
-                    // MARK: - Belief Carousel
-                    if !beliefs.isEmpty && lifeAreaFilter == "all" {
-                        Section {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // MARK: - Stories Header
+                        StoriesHeader(lifeAreaFilter: lifeAreaFilter)
+
+                        // MARK: - Belief Carousel
+                        if !beliefs.isEmpty && lifeAreaFilter == "all" {
                             BeliefCarousel(beliefs: beliefs)
+                                .background(Color.understoodBeige)
                         }
-                        .listRowBackground(Color.understoodBeige)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                    }
 
-                    // MARK: - Section Header with Edit Toggle
-                    Section {
-                        HStack {
-                            Text("RECENT ENTRIES")
-                                .font(Typography.sectionHeader)
-                                .tracking(1.5)
-                                .foregroundStyle(.textMetadata)
-
-                            Spacer()
-
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isEditingOrder.toggle()
-                                }
-                            } label: {
-                                Text(isEditingOrder ? "Done" : "Edit")
-                                    .font(Typography.uiMedium)
-                                    .foregroundStyle(.understoodCrimson)
-                            }
-                        }
-                        .padding(.top, 12)
-                        .padding(.bottom, 4)
-                    }
-                    .listRowBackground(Color.understoodCream)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
-
-                    // MARK: - Entry Feed (Reorderable)
-                    Section {
-                        ForEach(filteredEntries) { entry in
+                        // MARK: - Layer 1: Hero Story
+                        if let hero = heroStory {
                             NavigationLink(destination: EntryDetailView(
-                                entry: entry,
-                                onDeleted: {
-                                    Task { await loadEntries() }
-                                }
+                                entry: hero,
+                                onDeleted: { Task { await loadEntries() } },
+                                onFeaturedChanged: { Task { await loadEntries() } }
                             )) {
-                                EntryRow(entry: entry)
+                                HeroStoryView(entry: hero)
                             }
-                            .listRowBackground(Color.understoodCream)
-                            .listRowSeparatorTint(.surfaceChip)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    Task { await deleteEntry(entry) }
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+                            .buttonStyle(.plain)
+                        }
+
+                        // MARK: - Layer 2: Story Carousel
+                        if !carouselStories.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                SectionHeaderView(title: "LATEST STORIES")
+                                    .padding(.horizontal, 20)
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 16) {
+                                        ForEach(carouselStories) { entry in
+                                            NavigationLink(destination: EntryDetailView(
+                                                entry: entry,
+                                                onDeleted: { Task { await loadEntries() } },
+                                                onFeaturedChanged: { Task { await loadEntries() } }
+                                            )) {
+                                                StoryCarouselCard(entry: entry)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
                                 }
                             }
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                Button {
-                                    Task { await togglePin(entry) }
-                                } label: {
-                                    let isPinned = entry.pinned ?? false
-                                    Label(
-                                        isPinned ? "Unpin" : "Pin",
-                                        systemImage: isPinned ? "pin.slash.fill" : "pin.fill"
-                                    )
+                            .padding(.top, 24)
+                        }
+
+                        // MARK: - Layer 3: Category + Pinned Layout
+                        VStack(spacing: 24) {
+                            // By Category
+                            if !latestByCategory.isEmpty && lifeAreaFilter == "all" {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    SectionHeaderView(title: "BY CATEGORY")
+                                        .padding(.horizontal, 20)
+
+                                    ForEach(latestByCategory, id: \.category) { item in
+                                        NavigationLink(destination: EntryDetailView(
+                                            entry: item.entry,
+                                            onDeleted: { Task { await loadEntries() } },
+                                            onFeaturedChanged: { Task { await loadEntries() } }
+                                        )) {
+                                            CategoryEntryCard(category: item.category, entry: item.entry)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.horizontal, 20)
+                                    }
                                 }
-                                .tint(.understoodCrimson)
+                            }
+
+                            // Recent Stories (full list after hero + carousel)
+                            let remainingStories = Array(stories
+                                .filter { $0.id != heroStory?.id }
+                                .dropFirst(carouselStories.count)
+                                .prefix(20))
+
+                            if !remainingStories.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    SectionHeaderView(title: "MORE STORIES")
+                                        .padding(.horizontal, 20)
+
+                                    ForEach(remainingStories) { entry in
+                                        NavigationLink(destination: EntryDetailView(
+                                            entry: entry,
+                                            onDeleted: { Task { await loadEntries() } },
+                                            onFeaturedChanged: { Task { await loadEntries() } }
+                                        )) {
+                                            EntryRow(entry: entry)
+                                                .padding(.horizontal, 20)
+                                        }
+                                        .buttonStyle(.plain)
+
+                                        Divider()
+                                            .foregroundStyle(.borderLight)
+                                            .padding(.horizontal, 20)
+                                    }
+                                }
+                            }
+
+                            // Pinned sections
+                            if lifeAreaFilter == "all" {
+                                pinnedSection(title: "PINNED STORIES", entries: pinnedStories)
+                                pinnedSection(title: "PINNED NOTES", entries: pinnedNotes)
+                                pinnedSection(title: "PINNED ACTIONS", entries: pinnedActions)
                             }
                         }
-                        .onMove(perform: moveEntry)
+                        .padding(.top, 24)
+                        .padding(.bottom, 100)
                     }
-                    .environment(\.editMode, .constant(isEditingOrder ? .active : .inactive))
                 }
-                .listStyle(.plain)
                 .refreshable {
                     await loadEntries()
                 }
@@ -137,6 +200,30 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private func pinnedSection(title: String, entries: [Entry]) -> some View {
+        if !entries.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SectionHeaderView(title: title, count: entries.count, accentColor: .understoodCrimson)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+
+                ForEach(entries.prefix(5)) { entry in
+                    NavigationLink(destination: EntryDetailView(
+                        entry: entry,
+                        onDeleted: { Task { await loadEntries() } }
+                    )) {
+                        PinnedEntryRow(entry: entry)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+    }
+
     // MARK: - Data
 
     private func loadEntries() async {
@@ -144,113 +231,303 @@ struct ContentView: View {
         errorMessage = nil
 
         do {
-            entries = try await supabase.fetchEntries()
+            async let storiesTask = supabase.fetchEntries(limit: 50)
+            async let beliefsTask = supabase.fetchBeliefs(limit: 6)
+            async let featuredTask = supabase.fetchFeaturedEntry()
+            async let pinnedTask = supabase.fetchPinnedEntries()
 
-            // Load beliefs for carousel (up to 6)
-            beliefs = try await supabase.fetchBeliefs(limit: 6)
+            let (fetchedEntries, fetchedBeliefs, fetchedFeatured, fetchedPinned) =
+                try await (storiesTask, beliefsTask, featuredTask, pinnedTask)
 
-            // Apply stored custom order (or default sort)
-            orderedEntries = applyStoredOrder(to: entries)
-
+            entries = fetchedEntries
+            beliefs = fetchedBeliefs
+            featuredEntry = fetchedFeatured
+            pinnedEntries = fetchedPinned
             isLoading = false
         } catch {
             errorMessage = "Could not load entries.\n\(error.localizedDescription)"
             isLoading = false
-            print("Fetch error: \(error)")
         }
     }
+}
 
-    private func deleteEntry(_ entry: Entry) async {
-        do {
-            try await supabase.deleteEntry(id: entry.id)
-            Haptics.warning()
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    entries.removeAll { $0.id == entry.id }
-                    orderedEntries.removeAll { $0.id == entry.id }
-                    saveEntryOrder()
+// MARK: - Stories Header
+
+struct StoriesHeader: View {
+    let lifeAreaFilter: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if lifeAreaFilter != "all" {
+                Text(lifeAreaFilter.uppercased())
+                    .font(Typography.chipLabel)
+                    .tracking(1.5)
+                    .foregroundStyle(.understoodCrimson)
+            }
+
+            Text(todayDateString().uppercased())
+                .font(Typography.date)
+                .tracking(1)
+                .foregroundStyle(.textMetadata)
+
+            Text("Stories")
+                .font(Typography.connectionHero)
+                .foregroundStyle(.understoodCrimson)
+
+            Text("Your personal newsroom")
+                .font(Typography.subtitle)
+                .foregroundStyle(.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 20)
+        .background(Color.understoodBeige)
+    }
+
+    private func todayDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d, yyyy"
+        return formatter.string(from: Date())
+    }
+}
+
+// MARK: - Layer 1: Hero Story
+
+struct HeroStoryView: View {
+    let entry: Entry
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let poster = entry.posterWithFocalPoint {
+                AsyncImage(url: URL(string: poster.url)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(height: 400)
+                            .frame(maxWidth: .infinity)
+                            .clipped()
+                    case .failure, .empty:
+                        darkFallback
+                    @unknown default:
+                        darkFallback
+                    }
+                }
+                .frame(height: 400)
+                .frame(maxWidth: .infinity)
+            } else {
+                darkFallback
+            }
+
+            // Gradient overlay
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.7), .black.opacity(0.9)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // Content overlay
+            VStack(alignment: .leading, spacing: 8) {
+                Text(entry.category.uppercased())
+                    .font(Typography.categoryLabel)
+                    .tracking(1.5)
+                    .foregroundStyle(.understoodCrimson)
+
+                Text(entry.displayHeadline)
+                    .font(Typography.hero)
+                    .foregroundStyle(.white)
+                    .lineLimit(3)
+
+                HStack(spacing: 12) {
+                    Text(EntryDateFormatter.format(entry.createdAt))
+                        .font(Typography.date)
+                        .foregroundStyle(.white.opacity(0.7))
+
+                    if let mood = entry.mood, !mood.isEmpty {
+                        Text(mood)
+                            .font(Typography.info)
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Text("Read Story")
+                        .font(Typography.uiMedium)
+                        .fontWeight(.semibold)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.understoodCrimson)
+                .cornerRadius(6)
+                .padding(.top, 4)
+            }
+            .padding(20)
+        }
+        .frame(height: 400)
+        .clipped()
+    }
+
+    private var darkFallback: some View {
+        Rectangle()
+            .fill(Color.black)
+            .frame(height: 400)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Layer 2: Story Carousel Card
+
+struct StoryCarouselCard: View {
+    let entry: Entry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let posterUrl = entry.posterImageUrl {
+                AsyncImage(url: URL(string: posterUrl)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 200, height: 160)
+                            .clipped()
+                    case .failure, .empty:
+                        Rectangle()
+                            .fill(Color.surfaceSubtle)
+                            .frame(width: 200, height: 160)
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+                .cornerRadius(8)
+            } else {
+                Rectangle()
+                    .fill(Color.surfaceSubtle)
+                    .frame(width: 200, height: 160)
+                    .cornerRadius(8)
+                    .overlay {
+                        Image(systemName: "book.pages")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.textMuted)
+                    }
+            }
+
+            Text(entry.category.uppercased())
+                .font(Typography.categoryLabel)
+                .tracking(1.5)
+                .foregroundStyle(.understoodCrimson)
+
+            Text(entry.displayHeadline)
+                .font(Typography.cardHeadline)
+                .foregroundStyle(.textPrimary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+
+            Text(EntryDateFormatter.format(entry.createdAt))
+                .font(Typography.date)
+                .foregroundStyle(.textMetadata)
+        }
+        .frame(width: 200)
+    }
+}
+
+// MARK: - Layer 3: Category Entry Card
+
+struct CategoryEntryCard: View {
+    let category: String
+    let entry: Entry
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(category.uppercased())
+                    .font(Typography.categoryLabel)
+                    .tracking(1.5)
+                    .foregroundStyle(.understoodCrimson)
+
+                Text(entry.displayHeadline)
+                    .font(Typography.listHeadline)
+                    .foregroundStyle(.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                Text(EntryDateFormatter.format(entry.createdAt))
+                    .font(Typography.date)
+                    .foregroundStyle(.textMetadata)
+            }
+
+            Spacer()
+
+            if let posterUrl = entry.posterImageUrl {
+                AsyncImage(url: URL(string: posterUrl)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 72, height: 72)
+                            .clipped()
+                    default:
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.surfaceSubtle)
+                            .frame(width: 72, height: 72)
+                    }
+                }
+                .cornerRadius(6)
+            }
+        }
+        .padding(12)
+        .background(Color.understoodCream)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.borderLight, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Pinned Entry Row
+
+struct PinnedEntryRow: View {
+    let entry: Entry
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.understoodCrimson)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.displayHeadline)
+                    .font(Typography.listHeadline)
+                    .foregroundStyle(.textPrimary)
+                    .lineLimit(1)
+
+                HStack(spacing: 8) {
+                    Text(entry.category.uppercased())
+                        .font(Typography.chipLabel)
+                        .foregroundStyle(.understoodCrimson)
+
+                    if let type = entry.entryType, type != "story" {
+                        Text(type.capitalized)
+                            .font(Typography.chipLabel)
+                            .foregroundStyle(.textMetadata)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.surfaceChip)
+                            .cornerRadius(4)
+                    }
                 }
             }
-        } catch {
-            Haptics.error()
-            print("Delete error: \(error)")
+
+            Spacer()
         }
-    }
-
-    private func togglePin(_ entry: Entry) async {
-        let newPinned = !(entry.pinned ?? false)
-        do {
-            try await supabase.togglePin(id: entry.id, pinned: newPinned)
-            Haptics.medium()
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    if let index = entries.firstIndex(where: { $0.id == entry.id }) {
-                        entries[index].pinned = newPinned
-                    }
-                    if let index = orderedEntries.firstIndex(where: { $0.id == entry.id }) {
-                        orderedEntries[index].pinned = newPinned
-                    }
-                }
-            }
-        } catch {
-            Haptics.error()
-            print("Pin error: \(error)")
-        }
-    }
-
-    // MARK: - Reorder
-
-    /// Handle drag-to-reorder
-    private func moveEntry(from source: IndexSet, to destination: Int) {
-        orderedEntries.move(fromOffsets: source, toOffset: destination)
-        saveEntryOrder()
-        Haptics.light()
-    }
-
-    // MARK: - Order Persistence (UserDefaults)
-
-    private var orderStorageKey: String {
-        let userId = supabase.currentSession?.user.id.uuidString ?? "default"
-        return "entry-order-\(userId)"
-    }
-
-    /// Save current entry order to UserDefaults
-    private func saveEntryOrder() {
-        let ids = orderedEntries.map { $0.id }
-        UserDefaults.standard.set(ids, forKey: orderStorageKey)
-    }
-
-    /// Read stored entry order from UserDefaults
-    private func storedEntryOrder() -> [String] {
-        UserDefaults.standard.stringArray(forKey: orderStorageKey) ?? []
-    }
-
-    /// Apply stored order to fetched entries. New entries appear at top, then custom order.
-    private func applyStoredOrder(to fetched: [Entry]) -> [Entry] {
-        let storedIds = storedEntryOrder()
-
-        // If no stored order, use default sort: pinned first, then newest
-        guard !storedIds.isEmpty else {
-            return fetched.sorted { a, b in
-                let aPinned = a.pinned ?? false
-                let bPinned = b.pinned ?? false
-                if aPinned != bPinned { return aPinned }
-                return a.createdAt > b.createdAt
-            }
-        }
-
-        let storedIdSet = Set(storedIds)
-
-        // New entries not yet in stored order (newest first)
-        let newEntries = fetched
-            .filter { !storedIdSet.contains($0.id) }
-            .sorted { $0.createdAt > $1.createdAt }
-
-        // Previously ordered entries in their custom order
-        let entryMap = Dictionary(uniqueKeysWithValues: fetched.map { ($0.id, $0) })
-        let orderedExisting = storedIds.compactMap { entryMap[$0] }
-
-        return newEntries + orderedExisting
+        .padding(.vertical, 4)
     }
 }
 
@@ -262,37 +539,6 @@ struct BeliefCarousel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Beige header area
-            VStack(alignment: .leading, spacing: 4) {
-                ZStack {
-                    ForEach([
-                        (x: 0.6, y: 0.0),
-                        (x: -0.6, y: 0.0),
-                        (x: 0.0, y: 0.6),
-                        (x: 0.0, y: -0.6)
-                    ], id: \.x) { offset in
-                        Text("Connections")
-                            .font(Typography.connectionHero)
-                            .tracking(-0.5)
-                            .foregroundStyle(.understoodCrimson)
-                            .offset(x: offset.x, y: offset.y)
-                    }
-                    Text("Connections")
-                        .font(Typography.connectionHero)
-                        .tracking(-0.5)
-                        .foregroundStyle(.understoodCrimson)
-                }
-
-                Text(todayDateString().uppercased())
-                    .font(Typography.date)
-                    .tracking(1)
-                    .foregroundStyle(.textMetadata)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-
             // Quote carousel
             TabView(selection: $currentIndex) {
                 ForEach(Array(beliefs.enumerated()), id: \.element.id) { index, belief in
@@ -304,7 +550,7 @@ struct BeliefCarousel: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 180)
+            .frame(height: 160)
 
             // Custom pagination dots
             if beliefs.count > 1 {
@@ -324,21 +570,14 @@ struct BeliefCarousel: View {
                         .foregroundStyle(.textMetadata)
                         .padding(.leading, 4)
                 }
-                .padding(.top, 12)
-                .padding(.bottom, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
             }
 
-            // Crimson bottom border (matches web)
             Rectangle()
                 .fill(Color.understoodCrimson)
                 .frame(height: 2)
         }
-    }
-
-    private func todayDateString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d, yyyy"
-        return formatter.string(from: Date())
     }
 }
 
@@ -349,7 +588,6 @@ struct BeliefQuoteCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            // Quote with left crimson border
             HStack(spacing: 0) {
                 Rectangle()
                     .fill(Color.understoodCrimson)
@@ -366,7 +604,6 @@ struct BeliefQuoteCard: View {
             }
             .padding(.horizontal, 20)
 
-            // Connection type label
             if let connectionType = belief.connectionType {
                 Text(connectionType.replacingOccurrences(of: "_", with: " ").capitalized)
                     .font(Typography.chipLabel)
@@ -391,7 +628,7 @@ struct EntryRow: View {
     }
 }
 
-// MARK: - Image Entry Row (Editorial card with poster image)
+// MARK: - Image Entry Row
 
 struct ImageEntryRow: View {
     let entry: Entry
@@ -399,7 +636,6 @@ struct ImageEntryRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Large poster image
             ZStack(alignment: .bottomTrailing) {
                 AsyncImage(url: URL(string: posterUrl)) { phase in
                     switch phase {
@@ -430,7 +666,6 @@ struct ImageEntryRow: View {
                 .frame(maxWidth: .infinity)
                 .cornerRadius(8)
 
-                // Image count badge
                 let imageCount = entry.allImages.count
                 if imageCount > 1 {
                     HStack(spacing: 3) {
@@ -448,29 +683,25 @@ struct ImageEntryRow: View {
                 }
             }
 
-            // Content below image
             VStack(alignment: .leading, spacing: 8) {
-                // Category + pin
                 HStack(spacing: 6) {
                     Text(entry.category.uppercased())
                         .font(Typography.categoryLabel)
                         .tracking(1.5)
                         .foregroundStyle(.understoodCrimson)
 
-                    if entry.pinned == true {
+                    if entry.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(.understoodCrimson)
                     }
                 }
 
-                // Headline
                 Text(entry.displayHeadline)
                     .font(Typography.listHeadline)
                     .foregroundStyle(.textPrimary)
                     .lineLimit(3)
 
-                // Date + mood
                 HStack {
                     Text(EntryDateFormatter.format(entry.createdAt))
                         .font(Typography.date)
@@ -490,34 +721,31 @@ struct ImageEntryRow: View {
     }
 }
 
-// MARK: - Text Entry Row (No image)
+// MARK: - Text Entry Row
 
 struct TextEntryRow: View {
     let entry: Entry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Category label + pin indicator
             HStack(spacing: 6) {
                 Text(entry.category.uppercased())
                     .font(Typography.categoryLabel)
                     .tracking(1.5)
                     .foregroundStyle(.understoodCrimson)
 
-                if entry.pinned == true {
+                if entry.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(.understoodCrimson)
                 }
             }
 
-            // Headline
             Text(entry.displayHeadline)
                 .font(Typography.listHeadline)
                 .foregroundStyle(.textPrimary)
                 .lineLimit(2)
 
-            // Bottom row: date + mood
             HStack {
                 Text(EntryDateFormatter.format(entry.createdAt))
                     .font(Typography.date)
@@ -574,5 +802,6 @@ enum EntryDateFormatter {
 #Preview {
     NavigationStack {
         ContentView(lifeAreaFilter: "all")
+            .environment(AppNavigationState())
     }
 }

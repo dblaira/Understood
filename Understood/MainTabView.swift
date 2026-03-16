@@ -43,12 +43,7 @@ struct MainTabView: View {
                             subtitle: "Coming soon — category-styled note cards"
                         )
                     case "action":
-                        // Phase 2 — placeholder until ActionsView is built
-                        placeholderView(
-                            icon: "checkmark.circle",
-                            title: "Actions",
-                            subtitle: "Coming soon — task management with due dates"
-                        )
+                        ActionsView(lifeAreaFilter: nav.currentFilter)
                     default:
                         ContentView(lifeAreaFilter: nav.currentFilter)
                     }

@@ -13,17 +13,19 @@ enum ExtractionAggregator {
     // MARK: - Category Colors (matches web CATEGORY_COLORS)
 
     static let categoryColors: [String: Color] = [
-        "affect":    Color(hex: 0x8B5CF6),
-        "ambition":  Color(hex: 0x3B82F6),
-        "belief":    Color(hex: 0x7C3AED),
-        "exercise":  Color(hex: 0x10B981),
-        "health":    Color(hex: 0xF43F5E),
-        "insight":   Color(hex: 0xF59E0B),
-        "nutrition": Color(hex: 0x14B8A6),
-        "purchase":  Color(hex: 0xEC4899),
-        "sleep":     Color(hex: 0x6366F1),
-        "social":    Color(hex: 0xF97316),
-        "work":      Color(hex: 0x0EA5E9),
+        "affect":        Color(hex: 0x8B5CF6),
+        "ambition":      Color(hex: 0x3B82F6),
+        "belief":        Color(hex: 0x7C3AED),
+        "entertainment": Color(hex: 0xA855F7),
+        "exercise":      Color(hex: 0x10B981),
+        "health":        Color(hex: 0xF43F5E),
+        "insight":       Color(hex: 0xF59E0B),
+        "learning":      Color(hex: 0x06B6D4),
+        "nutrition":     Color(hex: 0x14B8A6),
+        "purchase":      Color(hex: 0xEC4899),
+        "sleep":         Color(hex: 0x6366F1),
+        "social":        Color(hex: 0xF97316),
+        "work":          Color(hex: 0x0EA5E9),
     ]
 
     private static let fallbackColors: [Color] = [
@@ -32,8 +34,8 @@ enum ExtractionAggregator {
     ]
 
     private static func categoryColor(for category: String) -> Color {
-        if let c = categoryColors[category] { return c }
-        let hash = abs(category.djb2Hash)
+        if let c = categoryColors[category.lowercased()] { return c }
+        let hash = abs(category.lowercased().djb2Hash)
         return fallbackColors[hash % fallbackColors.count]
     }
 
@@ -154,7 +156,8 @@ enum ExtractionAggregator {
                 importance: scores[i],
                 confidence: acc.totalConfidence / Double(acc.count),
                 occurrences: acc.count,
-                color: categoryColor(for: cat)
+                color: categoryColor(for: cat),
+                nodeLevel: nil
             ))
         }
 
@@ -169,11 +172,87 @@ enum ExtractionAggregator {
                 importance: scores[scoreIdx],
                 confidence: acc.totalConfidence / Double(acc.count),
                 occurrences: acc.count,
-                color: categoryColor(for: acc.category)
+                color: categoryColor(for: acc.category),
+                nodeLevel: nil
             ))
         }
 
         return nodes
+    }
+
+    // MARK: - Ontology Aggregation (parent-level)
+
+    static func aggregateByOntology(_ extractions: [Extraction]) -> [MapNode] {
+        let withParent = extractions.filter { $0.parentCategory != nil }
+        guard !withParent.isEmpty else { return [] }
+
+        var parentMap: [String: CategoryAccumulator] = [:]
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let isoFallback = ISO8601DateFormatter()
+        isoFallback.formatOptions = [.withInternetDateTime]
+
+        func parseDate(_ s: String) -> Date {
+            isoFormatter.date(from: s) ?? isoFallback.date(from: s) ?? Date.distantPast
+        }
+
+        for ext in withParent {
+            let parent = ext.parentCategory!
+            let entryDate = ext.createdAt
+
+            if parentMap[parent] == nil {
+                parentMap[parent] = CategoryAccumulator(
+                    count: 0,
+                    totalConfidence: 0,
+                    totalIntensity: 0,
+                    intensityCount: 0,
+                    mostRecentDate: entryDate
+                )
+            }
+            parentMap[parent]!.count += 1
+            parentMap[parent]!.totalConfidence += ext.confidence
+
+            let intensity = extractIntensity(ext.data)
+            if let intensity {
+                parentMap[parent]!.totalIntensity += intensity
+                parentMap[parent]!.intensityCount += 1
+            }
+
+            if parseDate(entryDate) > parseDate(parentMap[parent]!.mostRecentDate) {
+                parentMap[parent]!.mostRecentDate = entryDate
+            }
+        }
+
+        let sorted = parentMap.sorted { $0.key < $1.key }
+
+        let rawNodes = sorted.map { (_, acc) in
+            RawNodeData(
+                occurrences: acc.count,
+                avgIntensity: acc.intensityCount > 0 ? acc.totalIntensity / Double(acc.intensityCount) : 0.5,
+                avgConfidence: acc.totalConfidence / Double(acc.count),
+                mostRecentDate: acc.mostRecentDate
+            )
+        }
+
+        let scores = computeImportanceScores(rawNodes, parseDate: parseDate)
+
+        return sorted.enumerated().map { i, pair in
+            let (parentCat, acc) = pair
+            return MapNode(
+                id: "parent::\(parentCat)",
+                label: parentCat,
+                category: parentCat,
+                type: .category,
+                parentId: nil,
+                importance: scores[i],
+                confidence: acc.totalConfidence / Double(acc.count),
+                occurrences: acc.count,
+                color: categoryColor(for: parentCat),
+                nodeLevel: .parent
+            )
+        }
     }
 
     // MARK: - Importance Scoring

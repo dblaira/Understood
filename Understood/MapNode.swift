@@ -17,9 +17,15 @@ struct MapNode: Identifiable {
     let confidence: Double
     let occurrences: Int
     let color: Color
+    let nodeLevel: NodeLevel?
 
     enum NodeType {
         case category
         case concept
+    }
+
+    enum NodeLevel {
+        case parent
+        case child
     }
 }

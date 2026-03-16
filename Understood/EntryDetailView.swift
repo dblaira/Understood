@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct EntryDetailView: View {
-    let entry: Entry
+    @State var entry: Entry
     let supabase = SupabaseService.shared
 
     @Environment(\.dismiss) private var dismiss
@@ -16,9 +16,12 @@ struct EntryDetailView: View {
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var currentImagePage = 0
+    @State private var showLinkedCapture = false
+    @State private var linkedEntryType: String = "action"
+    @State private var starSpinning = false
 
-    /// Called after deletion so the parent can refresh
     var onDeleted: (() -> Void)?
+    var onFeaturedChanged: (() -> Void)?
 
     var body: some View {
         ScrollView {
@@ -31,31 +34,50 @@ struct EntryDetailView: View {
                         images: entry.allImages,
                         currentPage: $currentImagePage
                     )
-                    .padding(.horizontal, -24) // full-bleed
+                    .padding(.horizontal, -24)
+                }
+
+                // MARK: - Action Status (for actions only)
+
+                if entry.isAction {
+                    ActionStatusBar(
+                        entry: $entry,
+                        onToggle: { await toggleComplete() }
+                    )
                 }
 
                 // MARK: - Hero Section
 
                 VStack(alignment: .leading, spacing: 12) {
-                    // Category
-                    Text(entry.category.uppercased())
-                        .font(Typography.sectionHeader)
-                        .tracking(1.5)
-                        .foregroundStyle(.understoodCrimson)
+                    HStack {
+                        Text(entry.category.uppercased())
+                            .font(Typography.sectionHeader)
+                            .tracking(1.5)
+                            .foregroundStyle(.understoodCrimson)
 
-                    // Headline
+                        Spacer()
+
+                        // Featured star (stories only)
+                        if entry.isStory {
+                            FeaturedStarButton(
+                                isFeatured: entry.featured == true,
+                                isSpinning: starSpinning,
+                                onTap: { Task { await toggleFeatured() } }
+                            )
+                        }
+                    }
+
                     Text(entry.displayHeadline)
                         .font(Typography.headline)
-                        .foregroundStyle(.textPrimary)
+                        .foregroundStyle(entry.isCompleted ? .textMuted : .textPrimary)
+                        .strikethrough(entry.isCompleted)
 
-                    // Subheading
                     if let subheading = entry.subheading, !subheading.isEmpty {
                         Text(subheading)
                             .font(Typography.subheading)
                             .foregroundStyle(.textSecondary)
                     }
 
-                    // Metadata row
                     HStack(spacing: 12) {
                         Text(formatDate(entry.createdAt))
                             .font(Typography.date)
@@ -75,6 +97,10 @@ struct EntryDetailView: View {
                                 MetadataChip(label: environment)
                             }
                         }
+                    }
+
+                    if entry.isAction {
+                        DueDateLabel(entry: entry)
                     }
                 }
 
@@ -183,6 +209,16 @@ struct EntryDetailView: View {
                     }
                 }
 
+                // MARK: - Water Cycle
+
+                Divider()
+                    .foregroundStyle(.borderMedium)
+
+                WaterCycleButtons(entry: entry) { entryType in
+                    linkedEntryType = entryType
+                    showLinkedCapture = true
+                }
+
                 // MARK: - Delete
 
                 Divider()
@@ -217,6 +253,14 @@ struct EntryDetailView: View {
         } message: {
             Text("This will permanently delete this entry and cannot be undone.")
         }
+        .sheet(isPresented: $showLinkedCapture) {
+            CaptureView(
+                sourceEntryId: entry.id,
+                entryType: linkedEntryType,
+                prefillCategory: entry.category,
+                onSaved: {}
+            )
+        }
     }
 
     // MARK: - Actions
@@ -232,6 +276,58 @@ struct EntryDetailView: View {
         } catch {
             isDeleting = false
             print("Delete error: \(error)")
+        }
+    }
+
+    private func toggleFeatured() async {
+        let wasFeatured = entry.featured == true
+
+        // Optimistic update
+        await MainActor.run {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                entry.featured = !wasFeatured
+            }
+            if !wasFeatured {
+                starSpinning = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    starSpinning = false
+                }
+            }
+        }
+
+        do {
+            try await supabase.toggleFeatured(entryId: entry.id, currentlyFeatured: wasFeatured)
+            Haptics.medium()
+            onFeaturedChanged?()
+        } catch {
+            // Revert on error
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    entry.featured = wasFeatured
+                }
+            }
+            Haptics.error()
+        }
+    }
+
+    private func toggleComplete() async {
+        let wasCompleted = entry.isCompleted
+        let now = ISO8601DateFormatter().string(from: Date())
+
+        await MainActor.run {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                entry.completedAt = wasCompleted ? nil : now
+            }
+        }
+
+        do {
+            try await supabase.toggleActionComplete(id: entry.id, currentlyCompleted: wasCompleted)
+            Haptics.medium()
+        } catch {
+            await MainActor.run {
+                entry.completedAt = wasCompleted ? entry.completedAt : nil
+            }
+            Haptics.error()
         }
     }
 
@@ -278,6 +374,156 @@ struct EntryDetailView: View {
             text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - Featured Star Button
+
+struct FeaturedStarButton: View {
+    let isFeatured: Bool
+    let isSpinning: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            Image(systemName: isFeatured ? "star.fill" : "star")
+                .font(.system(size: 20))
+                .foregroundStyle(isFeatured ? .understoodCrimson : .textMuted)
+                .rotationEffect(.degrees(isSpinning ? 360 : 0))
+                .animation(
+                    isSpinning ? .easeInOut(duration: 0.6) : .default,
+                    value: isSpinning
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isFeatured
+            ? "This story is featured on your landing page. Tap to remove."
+            : "Feature this story on your landing page"
+        )
+    }
+}
+
+// MARK: - Action Status Bar
+
+struct ActionStatusBar: View {
+    @Binding var entry: Entry
+    let onToggle: () async -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ActionCheckbox(
+                isCompleted: entry.isCompleted,
+                isOverdue: entry.isOverdue
+            ) {
+                Task { await onToggle() }
+            }
+
+            Text(entry.isCompleted ? "Completed" : "Mark Complete")
+                .font(Typography.uiMedium)
+                .fontWeight(.semibold)
+                .foregroundStyle(entry.isCompleted ? .actionGreen : .textSecondary)
+
+            Spacer()
+
+            if entry.isCompleted {
+                Button {
+                    Task { await onToggle() }
+                } label: {
+                    Text("Undo")
+                        .font(Typography.uiMedium)
+                        .foregroundStyle(.textMetadata)
+                }
+            }
+        }
+        .padding(12)
+        .background(entry.isCompleted ? Color.actionGreen.opacity(0.08) : Color.surfaceSubtle)
+        .cornerRadius(8)
+    }
+}
+
+// MARK: - Water Cycle Buttons
+
+struct WaterCycleButtons: View {
+    let entry: Entry
+    let onCreateLinked: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("WATER CYCLE")
+                .font(Typography.sectionHeader)
+                .tracking(1.5)
+                .foregroundStyle(.textMuted)
+
+            if entry.isStory {
+                waterCycleButton(
+                    icon: "bolt.circle.fill",
+                    title: "Act on This",
+                    subtitle: "Create an action from this story",
+                    entryType: "action"
+                )
+            }
+
+            if entry.isAction && !entry.isCompleted {
+                waterCycleButton(
+                    icon: "note.text.badge.plus",
+                    title: "Collect Notes",
+                    subtitle: "Capture notes while working on this",
+                    entryType: "note"
+                )
+            }
+
+            if entry.isAction && entry.isCompleted {
+                waterCycleButton(
+                    icon: "sparkles",
+                    title: "What Changed?",
+                    subtitle: "Reflect on what completing this meant",
+                    entryType: "story"
+                )
+            }
+
+            if entry.isNote {
+                waterCycleButton(
+                    icon: "bolt.circle.fill",
+                    title: "Act on This",
+                    subtitle: "Turn this note into an action",
+                    entryType: "action"
+                )
+            }
+        }
+    }
+
+    private func waterCycleButton(icon: String, title: String, subtitle: String, entryType: String) -> some View {
+        Button {
+            Haptics.light()
+            onCreateLinked(entryType)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundStyle(.understoodCrimson)
+                    .frame(width: 32)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.uiMedium)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.textPrimary)
+                    Text(subtitle)
+                        .font(Typography.small)
+                        .foregroundStyle(.textMetadata)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.textMuted)
+            }
+            .padding(12)
+            .background(Color.surfaceSubtle)
+            .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
     }
 }
 

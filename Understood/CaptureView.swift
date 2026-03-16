@@ -13,6 +13,11 @@ struct CaptureView: View {
     @Environment(\.dismiss) private var dismiss
     let supabase = SupabaseService.shared
 
+    // Water Cycle linked entry params (optional)
+    var sourceEntryId: String? = nil
+    var entryType: String = "story"
+    var prefillCategory: String? = nil
+
     // Form state
     @State private var content = ""
     @State private var selectedCategory = "Business"
@@ -31,7 +36,6 @@ struct CaptureView: View {
 
     let categories = ["Business", "Finance", "Health", "Spiritual", "Fun", "Social", "Romance"]
 
-    /// Callback when entry is saved (so feed can refresh)
     var onSaved: (() -> Void)?
 
     var body: some View {
@@ -153,7 +157,7 @@ struct CaptureView: View {
                         .background(Color.clear)
                         .overlay(alignment: .topLeading) {
                             if content.isEmpty {
-                                Text("What happened? What are you thinking about?")
+                                Text(placeholderText)
                                     .font(Typography.editor)
                                     .foregroundStyle(Color.textPrimary.opacity(0.25))
                                     .padding(.horizontal, 21)
@@ -173,7 +177,7 @@ struct CaptureView: View {
                     }
                 }
             }
-            .navigationTitle("Capture")
+            .navigationTitle(captureTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color.understoodCream, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -204,6 +208,9 @@ struct CaptureView: View {
             }
             .onAppear {
                 isContentFocused = true
+                if let prefillCategory {
+                    selectedCategory = prefillCategory
+                }
             }
             .sheet(isPresented: $showPostCapture) {
                 PostCaptureSheet(
@@ -216,6 +223,22 @@ struct CaptureView: View {
                 .presentationDetents([.fraction(0.35)])
                 .presentationDragIndicator(.visible)
             }
+        }
+    }
+
+    private var captureTitle: String {
+        switch entryType {
+        case "action": return "New Action"
+        case "note": return "New Note"
+        default: return sourceEntryId != nil ? "New Story" : "Capture"
+        }
+    }
+
+    private var placeholderText: String {
+        switch entryType {
+        case "action": return "What do you want to do?"
+        case "note": return "What are you noticing?"
+        default: return "What happened? What are you thinking about?"
         }
     }
 
@@ -268,6 +291,8 @@ struct CaptureView: View {
             let entry = try await supabase.createEntry(
                 content: content,
                 category: selectedCategory,
+                entryType: entryType,
+                sourceEntryId: sourceEntryId,
                 metadata: metadata
             )
             savedEntry = entry

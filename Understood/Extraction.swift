@@ -17,6 +17,7 @@ struct Extraction: Codable, Identifiable, Hashable {
     let sourceText: String?
     let batchId: String
     let createdAt: String
+    let parentCategory: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -28,6 +29,7 @@ struct Extraction: Codable, Identifiable, Hashable {
         case sourceText = "source_text"
         case batchId = "batch_id"
         case createdAt = "created_at"
+        case parentCategory = "parent_category"
     }
 }
 

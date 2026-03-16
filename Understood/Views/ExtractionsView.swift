@@ -24,6 +24,7 @@ struct ExtractionsView: View {
     @State private var runResult: ExtractionBatchResponse?
     @State private var errorMessage: String?
     @State private var expandedCategories: Set<String> = []
+    @State private var drillParent: String?
 
     /// Extractions shown in cards mode — filtered by selected map node when applicable
     private var displayExtractions: [Extraction] {
@@ -133,15 +134,24 @@ struct ExtractionsView: View {
         VStack(spacing: 0) {
             extractionsHeader
 
+            if drillParent != nil {
+                drillBackButton
+            }
+
             if allExtractions.isEmpty && !isRunning {
                 emptyState
             } else if isRunning && allExtractions.isEmpty {
                 runningState
             } else {
                 InfluenceMapView(nodes: mapNodes) { node in
-                    selectedMapNode = node
-                    expandedCategories = Set([node.category])
-                    withAnimation { viewMode = .cards }
+                    if drillParent == nil {
+                        drillParent = node.label
+                        recomputeMapNodes()
+                    } else {
+                        selectedMapNode = node
+                        expandedCategories = Set([node.category])
+                        withAnimation { viewMode = .cards }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -153,6 +163,26 @@ struct ExtractionsView: View {
                 errorBanner(error)
             }
         }
+    }
+
+    private var drillBackButton: some View {
+        HStack {
+            Button {
+                drillParent = nil
+                recomputeMapNodes()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("All Categories")
+                        .font(Typography.uiMedium)
+                }
+                .foregroundStyle(.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Cards View
@@ -494,7 +524,7 @@ struct ExtractionsView: View {
 
             batches = try await batchTask
             allExtractions = try await allTask
-            mapNodes = ExtractionAggregator.aggregate(allExtractions)
+            recomputeMapNodes()
 
             if let first = batches.first {
                 activeBatchId = first.batchId
@@ -504,6 +534,15 @@ struct ExtractionsView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func recomputeMapNodes() {
+        if let parent = drillParent {
+            let filtered = allExtractions.filter { $0.parentCategory == parent }
+            mapNodes = ExtractionAggregator.aggregate(filtered)
+        } else {
+            mapNodes = ExtractionAggregator.aggregateByOntology(allExtractions)
+        }
     }
 
     private func loadBatch(_ batchId: String) async {

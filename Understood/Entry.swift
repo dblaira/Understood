@@ -44,6 +44,11 @@ struct Entry: Codable, Identifiable, Hashable {
     var connectionType: String?
     var sourceEntryId: String?
     var pinned: Bool?
+    var pinnedAt: String?
+    var featured: Bool?
+    var dueDate: String?
+    var recurrenceRule: String?
+    var completedAt: String?
     var createdAt: String
     var updatedAt: String?
     var metadata: EntryMetadata?
@@ -92,6 +97,67 @@ struct Entry: Codable, Identifiable, Hashable {
         posterImageUrl != nil
     }
 
+    // MARK: - Entry Type Helpers
+
+    var isPinned: Bool { pinnedAt != nil }
+    var isCompleted: Bool { completedAt != nil }
+    var isAction: Bool { entryType == "action" }
+    var isStory: Bool { entryType == nil || entryType == "story" }
+    var isNote: Bool { entryType == "note" }
+
+    var parsedDueDate: Date? {
+        guard let dueDate else { return nil }
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = fmt.date(from: dueDate) { return d }
+        fmt.formatOptions = [.withInternetDateTime]
+        return fmt.date(from: dueDate)
+    }
+
+    var parsedCompletedAt: Date? {
+        guard let completedAt else { return nil }
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = fmt.date(from: completedAt) { return d }
+        fmt.formatOptions = [.withInternetDateTime]
+        return fmt.date(from: completedAt)
+    }
+
+    var isOverdue: Bool {
+        guard !isCompleted, let due = parsedDueDate else { return false }
+        return due < Calendar.current.startOfDay(for: Date())
+    }
+
+    var isDueToday: Bool {
+        guard let due = parsedDueDate else { return false }
+        return Calendar.current.isDateInToday(due)
+    }
+
+    /// Plain-text preview of content, HTML stripped, max 80 chars
+    var contentPreview: String {
+        let stripped = content
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if stripped.count > 80 {
+            return String(stripped.prefix(80)) + "..."
+        }
+        return stripped
+    }
+
+    /// Poster image with focal point data
+    var posterWithFocalPoint: (url: String, focalX: Double, focalY: Double)? {
+        if let images = images, !images.isEmpty {
+            let poster = images.first(where: { $0.isPoster }) ?? images[0]
+            return (poster.url, poster.focalX ?? 50, poster.focalY ?? 50)
+        }
+        if let url = imageUrl ?? photoUrl {
+            return (url, 50, 50)
+        }
+        return nil
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case headline
@@ -105,6 +171,11 @@ struct Entry: Codable, Identifiable, Hashable {
         case connectionType = "connection_type"
         case sourceEntryId = "source_entry_id"
         case pinned
+        case pinnedAt = "pinned_at"
+        case featured
+        case dueDate = "due_date"
+        case recurrenceRule = "recurrence_rule"
+        case completedAt = "completed_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case metadata

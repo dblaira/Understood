@@ -126,6 +126,56 @@ class SupabaseService {
         return entries
     }
 
+    /// Fetch all entries regardless of type (used for actions, pinned, etc.)
+    func fetchAllEntries(limit: Int = 200) async throws -> [Entry] {
+        let entries: [Entry] = try await client
+            .from("entries")
+            .select()
+            .order("created_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        return entries
+    }
+
+    /// Fetch the user's featured entry (for story hero)
+    func fetchFeaturedEntry() async throws -> Entry? {
+        let entries: [Entry] = try await client
+            .from("entries")
+            .select()
+            .eq("featured", value: true)
+            .limit(1)
+            .execute()
+            .value
+        return entries.first
+    }
+
+    /// Fetch all pinned entries (pinned_at is not null)
+    func fetchPinnedEntries() async throws -> [Entry] {
+        let entries: [Entry] = try await client
+            .from("entries")
+            .select()
+            .order("created_at", ascending: false)
+            .limit(200)
+            .execute()
+            .value
+        return entries.filter { $0.isPinned }
+            .sorted { ($0.pinnedAt ?? "") > ($1.pinnedAt ?? "") }
+    }
+
+    /// Fetch actions (entries with entry_type = 'action')
+    func fetchActions(limit: Int = 200) async throws -> [Entry] {
+        let entries: [Entry] = try await client
+            .from("entries")
+            .select()
+            .eq("entry_type", value: "action")
+            .order("created_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        return entries
+    }
+
     // MARK: - Entry Actions
 
     /// Delete an entry by ID
@@ -137,11 +187,44 @@ class SupabaseService {
             .execute()
     }
 
-    /// Toggle pinned state on an entry
-    func togglePin(id: String, pinned: Bool) async throws {
+    /// Toggle pinned state using pinned_at timestamp
+    func togglePin(id: String, currentlyPinned: Bool) async throws {
+        let payload = PinUpdatePayload(
+            pinnedAt: currentlyPinned ? nil : ISO8601DateFormatter().string(from: Date()),
+            pinned: !currentlyPinned,
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
         try await client
             .from("entries")
-            .update(["pinned": pinned])
+            .update(payload)
+            .eq("id", value: id)
+            .execute()
+    }
+
+    /// Toggle featured state. Only one entry can be featured at a time —
+    /// unfeaturing the old one is handled server-side by RLS/trigger, but
+    /// we clear all other featured flags client-side as a safety measure.
+    func toggleFeatured(entryId: String, currentlyFeatured: Bool) async throws {
+        let payload = FeaturedUpdatePayload(
+            featured: !currentlyFeatured,
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+        try await client
+            .from("entries")
+            .update(payload)
+            .eq("id", value: entryId)
+            .execute()
+    }
+
+    /// Toggle action completion: sets or clears completed_at
+    func toggleActionComplete(id: String, currentlyCompleted: Bool) async throws {
+        let payload = CompletionUpdatePayload(
+            completedAt: currentlyCompleted ? nil : ISO8601DateFormatter().string(from: Date()),
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+        try await client
+            .from("entries")
+            .update(payload)
             .eq("id", value: id)
             .execute()
     }
@@ -149,7 +232,13 @@ class SupabaseService {
     // MARK: - Entry Creation
 
     /// Create a new journal entry
-    func createEntry(content: String, category: String, metadata: EntryMetadata?) async throws -> Entry {
+    func createEntry(
+        content: String,
+        category: String,
+        entryType: String = "story",
+        sourceEntryId: String? = nil,
+        metadata: EntryMetadata? = nil
+    ) async throws -> Entry {
         guard let userId = currentSession?.user.id else {
             throw NSError(domain: "SupabaseService", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
@@ -158,9 +247,10 @@ class SupabaseService {
             content: content,
             headline: "",
             category: category,
-            entryType: "story",
+            entryType: entryType,
             userId: userId.uuidString,
             generatingVersions: true,
+            sourceEntryId: sourceEntryId,
             metadata: metadata
         )
 
@@ -173,6 +263,21 @@ class SupabaseService {
             .value
 
         return entry
+    }
+
+    /// Create a linked entry (Water Cycle: story -> action -> note -> story)
+    func createLinkedEntry(
+        content: String,
+        category: String,
+        sourceEntryId: String,
+        entryType: String
+    ) async throws -> Entry {
+        return try await createEntry(
+            content: content,
+            category: category,
+            entryType: entryType,
+            sourceEntryId: sourceEntryId
+        )
     }
 
     // MARK: - AI Inference (Vercel API Routes)
@@ -457,6 +562,7 @@ struct NewEntryPayload: Encodable {
     let entryType: String
     let userId: String
     let generatingVersions: Bool
+    let sourceEntryId: String?
     let metadata: EntryMetadata?
 
     enum CodingKeys: String, CodingKey {
@@ -464,6 +570,39 @@ struct NewEntryPayload: Encodable {
         case entryType = "entry_type"
         case userId = "user_id"
         case generatingVersions = "generating_versions"
+        case sourceEntryId = "source_entry_id"
+    }
+}
+
+struct PinUpdatePayload: Encodable {
+    let pinnedAt: String?
+    let pinned: Bool
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case pinnedAt = "pinned_at"
+        case pinned
+        case updatedAt = "updated_at"
+    }
+}
+
+struct CompletionUpdatePayload: Encodable {
+    let completedAt: String?
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case completedAt = "completed_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+struct FeaturedUpdatePayload: Encodable {
+    let featured: Bool
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case featured
+        case updatedAt = "updated_at"
     }
 }
 

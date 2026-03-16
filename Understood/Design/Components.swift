@@ -270,6 +270,107 @@ struct FlowLayout: Layout {
     }
 }
 
+// MARK: - Action Checkbox
+
+struct ActionCheckbox: View {
+    let isCompleted: Bool
+    let isOverdue: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                if isCompleted {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.actionGreen)
+                        .frame(width: 22, height: 22)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isOverdue ? Color.overdueRed : Color.borderMedium, lineWidth: 1.5)
+                        .frame(width: 22, height: 22)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Due Date Label
+
+struct DueDateLabel: View {
+    let entry: Entry
+
+    var body: some View {
+        if entry.isCompleted, let completed = entry.parsedCompletedAt {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                Text("Completed \(formatShortDate(completed))")
+                    .font(Typography.chipLabel)
+            }
+            .foregroundStyle(.actionGreen)
+        } else if entry.isOverdue, let due = entry.parsedDueDate {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 10))
+                Text("Overdue: \(formatShortDate(due))")
+                    .font(Typography.chipLabel)
+            }
+            .foregroundStyle(.overdueRed)
+        } else if let due = entry.parsedDueDate {
+            HStack(spacing: 4) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 10))
+                Text("Due: \(formatShortDate(due))")
+                    .font(Typography.chipLabel)
+            }
+            .foregroundStyle(.textMetadata)
+        }
+    }
+
+    private func formatShortDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.isDateInTomorrow(date) { return "Tomorrow" }
+        let df = DateFormatter()
+        df.dateFormat = "MMM d"
+        return df.string(from: date)
+    }
+}
+
+// MARK: - Section Header
+
+struct SectionHeaderView: View {
+    let title: String
+    var count: Int? = nil
+    var accentColor: Color = .textMetadata
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(Typography.sectionHeader)
+                .tracking(1.5)
+                .foregroundStyle(accentColor)
+
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(Typography.chipLabel)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(accentColor)
+                    .clipShape(Capsule())
+            }
+
+            Spacer()
+        }
+    }
+}
+
 // MARK: - AI Generating Spinner
 
 struct AIGeneratingView: View {

@@ -21,6 +21,12 @@ extension ShapeStyle where Self == Color {
     /// Warm beige for section backgrounds — #E8E2D8 (matches web app)
     static var understoodBeige: Color { Color(red: 0.91, green: 0.89, blue: 0.85) }
 
+    /// Green for completed actions — #22C55E
+    static var actionGreen: Color { Color(red: 0.133, green: 0.773, blue: 0.369) }
+
+    /// Red for overdue actions — #EF4444
+    static var overdueRed: Color { Color(red: 0.937, green: 0.267, blue: 0.267) }
+
     // MARK: - Text Colors
 
     /// Primary text — pure black

@@ -134,7 +134,7 @@ struct BeliefDetailView: View {
                             Text("No connected entries yet")
                                 .font(Typography.subtitle)
                                 .foregroundStyle(.textSecondary)
-                            Text("Entries that relate to this belief will appear here")
+                            Text("Entries that relate to this connection will appear here")
                                 .font(Typography.small)
                                 .foregroundStyle(.textMuted)
                                 .multilineTextAlignment(.center)

@@ -8,6 +8,21 @@
 import SwiftUI
 import Auth
 
+// MARK: - Stories landing metrics
+
+/// Centralized layout constants for the Stories hero + fold.
+private enum StoriesLandingMetrics {
+    /// Space below safe-area top for hero text now that the frozen top header is gone.
+    static let heroContentOffsetBelowSafeArea: CGFloat = 36
+    /// Space between the final hero line and the beige story section.
+    static let heroContentBottomPadding: CGFloat = 24
+    static let overlayHorizontalPadding: CGFloat = 20
+    static let overlayTopPadding: CGFloat = 54
+    static let overlayBottomPadding: CGFloat = 10
+    static let overlayIconSpacing: CGFloat = 14
+    static let latestStoriesSectionTopPadding: CGFloat = 24
+}
+
 struct ContentView: View {
     let supabase = SupabaseService.shared
     @Environment(AppNavigationState.self) private var nav
@@ -15,7 +30,6 @@ struct ContentView: View {
     @State private var entries: [Entry] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var beliefs: [Entry] = []
     @State private var featuredEntry: Entry?
     @State private var pinnedEntries: [Entry] = []
 
@@ -32,19 +46,12 @@ struct ContentView: View {
     }
 
     private var carouselStories: [Entry] {
-        let skip = heroStory?.id
-        return Array(stories.filter { $0.id != skip }.prefix(10))
+        Array(stories.prefix(10))
     }
 
-    private let categories = ["Business", "Finance", "Health", "Spiritual", "Fun", "Social", "Romance"]
-
-    private var latestByCategory: [(category: String, entry: Entry)] {
-        categories.compactMap { cat in
-            if let entry = stories.first(where: { $0.category.lowercased() == cat.lowercased() }) {
-                return (cat, entry)
-            }
-            return nil
-        }
+    private var remainingStories: [Entry] {
+        let carouselIDs = Set(carouselStories.map(\.id))
+        return Array(stories.filter { !carouselIDs.contains($0.id) }.prefix(20))
     }
 
     private var pinnedStories: [Entry] {
@@ -80,123 +87,107 @@ struct ContentView: View {
                     onAction: { nav.showCapture = true }
                 )
             } else {
+                GeometryReader { geo in
                 ScrollView {
                     VStack(spacing: 0) {
-                        // MARK: - Stories Header
-                        StoriesHeader(lifeAreaFilter: lifeAreaFilter)
-
-                        // MARK: - Belief Carousel
-                        if !beliefs.isEmpty && lifeAreaFilter == "all" {
-                            BeliefCarousel(beliefs: beliefs)
-                                .background(Color.understoodBeige)
-                        }
-
-                        // MARK: - Layer 1: Hero Story
+                        // MARK: - Hero Story (full-bleed dark zone, content-height driven)
                         if let hero = heroStory {
                             NavigationLink(destination: EntryDetailView(
                                 entry: hero,
                                 onDeleted: { Task { await loadEntries() } },
                                 onFeaturedChanged: { Task { await loadEntries() } }
                             )) {
-                                HeroStoryView(entry: hero)
+                                HeroStoryView(
+                                    entry: hero,
+                                    scrollSafeAreaTop: geo.safeAreaInsets.top
+                                )
                             }
                             .buttonStyle(.plain)
                         }
 
-                        // MARK: - Layer 2: Story Carousel
-                        if !carouselStories.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                SectionHeaderView(title: "LATEST STORIES")
-                                    .padding(.horizontal, 20)
+                        // MARK: - Light Zone
+                        VStack(spacing: 0) {
+                            // Story Carousel (first light content — matches IMG_1177 hero + LATEST STORIES peek)
+                            if !carouselStories.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    SectionHeaderView(title: "LATEST STORIES")
+                                        .padding(.horizontal, 20)
 
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 16) {
-                                        ForEach(carouselStories) { entry in
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 16) {
+                                            ForEach(carouselStories) { entry in
+                                                NavigationLink(destination: EntryDetailView(
+                                                    entry: entry,
+                                                    onDeleted: { Task { await loadEntries() } },
+                                                    onFeaturedChanged: { Task { await loadEntries() } }
+                                                )) {
+                                                    StoryCarouselCard(entry: entry)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                        .padding(.horizontal, 20)
+                                    }
+                                }
+                                .padding(.top, StoriesLandingMetrics.latestStoriesSectionTopPadding)
+                                .padding(.bottom, 24)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.understoodBeige)
+                            }
+
+                            // Category + Pinned Layout (BY CATEGORY omitted on landing — use menu / filters elsewhere)
+                            VStack(spacing: 24) {
+                                if !remainingStories.isEmpty {
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        SectionHeaderView(title: "MORE STORIES")
+                                            .padding(.horizontal, 20)
+
+                                        ForEach(remainingStories) { entry in
                                             NavigationLink(destination: EntryDetailView(
                                                 entry: entry,
                                                 onDeleted: { Task { await loadEntries() } },
                                                 onFeaturedChanged: { Task { await loadEntries() } }
                                             )) {
-                                                StoryCarouselCard(entry: entry)
+                                                EntryRow(entry: entry)
+                                                    .padding(.horizontal, 20)
                                             }
                                             .buttonStyle(.plain)
+
+                                            Divider()
+                                                .foregroundStyle(.borderLight)
+                                                .padding(.horizontal, 20)
                                         }
                                     }
-                                    .padding(.horizontal, 20)
+                                }
+
+                                if lifeAreaFilter == "all" {
+                                    pinnedSection(title: "PINNED STORIES", entries: pinnedStories)
+                                    pinnedSection(title: "PINNED NOTES", entries: pinnedNotes)
+                                    pinnedSection(title: "PINNED ACTIONS", entries: pinnedActions)
                                 }
                             }
                             .padding(.top, 24)
+                            .padding(.bottom, 100)
                         }
-
-                        // MARK: - Layer 3: Category + Pinned Layout
-                        VStack(spacing: 24) {
-                            // By Category
-                            if !latestByCategory.isEmpty && lifeAreaFilter == "all" {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    SectionHeaderView(title: "BY CATEGORY")
-                                        .padding(.horizontal, 20)
-
-                                    ForEach(latestByCategory, id: \.category) { item in
-                                        NavigationLink(destination: EntryDetailView(
-                                            entry: item.entry,
-                                            onDeleted: { Task { await loadEntries() } },
-                                            onFeaturedChanged: { Task { await loadEntries() } }
-                                        )) {
-                                            CategoryEntryCard(category: item.category, entry: item.entry)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .padding(.horizontal, 20)
-                                    }
-                                }
-                            }
-
-                            // Recent Stories (full list after hero + carousel)
-                            let remainingStories = Array(stories
-                                .filter { $0.id != heroStory?.id }
-                                .dropFirst(carouselStories.count)
-                                .prefix(20))
-
-                            if !remainingStories.isEmpty {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    SectionHeaderView(title: "MORE STORIES")
-                                        .padding(.horizontal, 20)
-
-                                    ForEach(remainingStories) { entry in
-                                        NavigationLink(destination: EntryDetailView(
-                                            entry: entry,
-                                            onDeleted: { Task { await loadEntries() } },
-                                            onFeaturedChanged: { Task { await loadEntries() } }
-                                        )) {
-                                            EntryRow(entry: entry)
-                                                .padding(.horizontal, 20)
-                                        }
-                                        .buttonStyle(.plain)
-
-                                        Divider()
-                                            .foregroundStyle(.borderLight)
-                                            .padding(.horizontal, 20)
-                                    }
-                                }
-                            }
-
-                            // Pinned sections
-                            if lifeAreaFilter == "all" {
-                                pinnedSection(title: "PINNED STORIES", entries: pinnedStories)
-                                pinnedSection(title: "PINNED NOTES", entries: pinnedNotes)
-                                pinnedSection(title: "PINNED ACTIONS", entries: pinnedActions)
-                            }
-                        }
-                        .padding(.top, 24)
-                        .padding(.bottom, 100)
                     }
                 }
+                .ignoresSafeArea(edges: .top)
                 .refreshable {
                     await loadEntries()
                 }
+                } // GeometryReader
             }
         }
         .task {
             await loadEntries()
+        }
+        .onAppear {
+            guard !entries.isEmpty else { return }
+            Task { await loadEntries() }
+        }
+        .onChange(of: nav.showCapture) { _, isPresented in
+            guard !isPresented else { return }
+            Task { await loadEntries() }
         }
     }
 
@@ -232,15 +223,13 @@ struct ContentView: View {
 
         do {
             async let storiesTask = supabase.fetchEntries(limit: 50)
-            async let beliefsTask = supabase.fetchBeliefs(limit: 6)
             async let featuredTask = supabase.fetchFeaturedEntry()
             async let pinnedTask = supabase.fetchPinnedEntries()
 
-            let (fetchedEntries, fetchedBeliefs, fetchedFeatured, fetchedPinned) =
-                try await (storiesTask, beliefsTask, featuredTask, pinnedTask)
+            let (fetchedEntries, fetchedFeatured, fetchedPinned) =
+                try await (storiesTask, featuredTask, pinnedTask)
 
             entries = fetchedEntries
-            beliefs = fetchedBeliefs
             featuredEntry = fetchedFeatured
             pinnedEntries = fetchedPinned
             isLoading = false
@@ -251,132 +240,60 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Stories Header
-
-struct StoriesHeader: View {
-    let lifeAreaFilter: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if lifeAreaFilter != "all" {
-                Text(lifeAreaFilter.uppercased())
-                    .font(Typography.chipLabel)
-                    .tracking(1.5)
-                    .foregroundStyle(.understoodCrimson)
-            }
-
-            Text(todayDateString().uppercased())
-                .font(Typography.date)
-                .tracking(1)
-                .foregroundStyle(.textMetadata)
-
-            Text("Stories")
-                .font(Typography.connectionHero)
-                .foregroundStyle(.understoodCrimson)
-
-            Text("Your personal newsroom")
-                .font(Typography.subtitle)
-                .foregroundStyle(.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 20)
-        .background(Color.understoodBeige)
-    }
-
-    private func todayDateString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d, yyyy"
-        return formatter.string(from: Date())
-    }
-}
-
-// MARK: - Layer 1: Hero Story
+// MARK: - Hero Story (full-bleed editorial)
 
 struct HeroStoryView: View {
     let entry: Entry
+    /// Safe-area top from the parent `GeometryReader` (scroll content often reports `0` when `.ignoresSafeArea(edges: .top)`).
+    var scrollSafeAreaTop: CGFloat = 0
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            if let poster = entry.posterWithFocalPoint {
-                AsyncImage(url: URL(string: poster.url)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(height: 400)
-                            .frame(maxWidth: .infinity)
-                            .clipped()
-                    case .failure, .empty:
-                        darkFallback
-                    @unknown default:
-                        darkFallback
-                    }
-                }
-                .frame(height: 400)
-                .frame(maxWidth: .infinity)
-            } else {
-                darkFallback
-            }
+        let topInset = max(scrollSafeAreaTop, 47)
+            + StoriesLandingMetrics.heroContentOffsetBelowSafeArea
 
-            // Gradient overlay
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.7), .black.opacity(0.9)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+        VStack(alignment: .leading, spacing: 10) {
+            Text(entry.category.uppercased())
+                .font(Typography.categoryLabel)
+                .tracking(1.5)
+                .foregroundStyle(.understoodCrimson)
+                .layoutPriority(1)
 
-            // Content overlay
-            VStack(alignment: .leading, spacing: 8) {
-                Text(entry.category.uppercased())
-                    .font(Typography.categoryLabel)
-                    .tracking(1.5)
-                    .foregroundStyle(.understoodCrimson)
-
-                Text(entry.displayHeadline)
-                    .font(Typography.hero)
-                    .foregroundStyle(.white)
-                    .lineLimit(3)
-
-                HStack(spacing: 12) {
-                    Text(EntryDateFormatter.format(entry.createdAt))
-                        .font(Typography.date)
-                        .foregroundStyle(.white.opacity(0.7))
-
-                    if let mood = entry.mood, !mood.isEmpty {
-                        Text(mood)
-                            .font(Typography.info)
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
-                }
-
-                HStack(spacing: 6) {
-                    Text("Read Story")
-                        .font(Typography.uiMedium)
-                        .fontWeight(.semibold)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 10, weight: .bold))
-                }
+            Text(entry.displayHeadline)
+                .font(.custom("PlayfairDisplay-Regular", size: 40))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 16)
+                .lineLimit(nil)
+                .lineSpacing(5)
+                .minimumScaleFactor(0.82)
+                .layoutPriority(3)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, 8)
-                .background(Color.understoodCrimson)
-                .cornerRadius(6)
-                .padding(.top, 4)
-            }
-            .padding(20)
-        }
-        .frame(height: 400)
-        .clipped()
-    }
 
-    private var darkFallback: some View {
-        Rectangle()
-            .fill(Color.black)
-            .frame(height: 400)
-            .frame(maxWidth: .infinity)
+            if let subheading = entry.subheading, !subheading.isEmpty {
+                Text(subheading)
+                    .font(Typography.subtitle)
+                    .italic()
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(3)
+                    .layoutPriority(1)
+            }
+
+            Text(entry.contentPreview)
+                .font(Typography.body)
+                .foregroundStyle(.white.opacity(0.66))
+                .lineLimit(2)
+                .padding(.top, 2)
+        }
+        .padding(.horizontal, StoriesLandingMetrics.overlayHorizontalPadding)
+        .padding(.top, topInset)
+        .padding(.bottom, StoriesLandingMetrics.heroContentBottomPadding)
+        .frame(maxWidth: .infinity)
+        .background(Color.black)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.understoodCrimson)
+                .frame(height: 3)
+        }
+        .clipped()
     }
 }
 
@@ -387,35 +304,47 @@ struct StoryCarouselCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let posterUrl = entry.posterImageUrl {
-                AsyncImage(url: URL(string: posterUrl)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 200, height: 160)
-                            .clipped()
-                    case .failure, .empty:
-                        Rectangle()
-                            .fill(Color.surfaceSubtle)
-                            .frame(width: 200, height: 160)
-                    @unknown default:
-                        EmptyView()
+            ZStack(alignment: .bottomTrailing) {
+                if let poster = entry.posterWithFocalPoint {
+                    AsyncImage(url: URL(string: poster.url)) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        case .failure:
+                            imageFallback(systemName: "photo")
+                        case .empty:
+                            imageFallback(systemName: "photo")
+                                .overlay(ProgressView())
+                        @unknown default:
+                            imageFallback(systemName: "photo")
+                        }
                     }
+                    .id(poster.url)
+                } else {
+                    imageFallback(systemName: "book.pages")
                 }
-                .cornerRadius(8)
-            } else {
-                Rectangle()
-                    .fill(Color.surfaceSubtle)
-                    .frame(width: 200, height: 160)
-                    .cornerRadius(8)
-                    .overlay {
-                        Image(systemName: "book.pages")
-                            .font(.system(size: 24))
-                            .foregroundStyle(.textMuted)
+
+                let imageCount = entry.allImages.count
+                if imageCount > 1 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 10))
+                        Text("\(imageCount)")
+                            .font(Typography.chipLabel)
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(6)
+                    .padding(8)
+                }
             }
+            .frame(width: 200, height: 160)
+            .clipped()
+            .cornerRadius(8)
 
             Text(entry.category.uppercased())
                 .font(Typography.categoryLabel)
@@ -434,60 +363,15 @@ struct StoryCarouselCard: View {
         }
         .frame(width: 200)
     }
-}
 
-// MARK: - Layer 3: Category Entry Card
-
-struct CategoryEntryCard: View {
-    let category: String
-    let entry: Entry
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(category.uppercased())
-                    .font(Typography.categoryLabel)
-                    .tracking(1.5)
-                    .foregroundStyle(.understoodCrimson)
-
-                Text(entry.displayHeadline)
-                    .font(Typography.listHeadline)
-                    .foregroundStyle(.textPrimary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                Text(EntryDateFormatter.format(entry.createdAt))
-                    .font(Typography.date)
-                    .foregroundStyle(.textMetadata)
+    private func imageFallback(systemName: String) -> some View {
+        Rectangle()
+            .fill(Color.surfaceSubtle)
+            .overlay {
+                Image(systemName: systemName)
+                    .font(.system(size: 24))
+                    .foregroundStyle(.textMuted)
             }
-
-            Spacer()
-
-            if let posterUrl = entry.posterImageUrl {
-                AsyncImage(url: URL(string: posterUrl)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 72, height: 72)
-                            .clipped()
-                    default:
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.surfaceSubtle)
-                            .frame(width: 72, height: 72)
-                    }
-                }
-                .cornerRadius(6)
-            }
-        }
-        .padding(12)
-        .background(Color.understoodCream)
-        .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.borderLight, lineWidth: 1)
-        )
     }
 }
 
@@ -550,7 +434,7 @@ struct BeliefCarousel: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 160)
+            .frame(height: 120)
 
             // Custom pagination dots
             if beliefs.count > 1 {
@@ -665,6 +549,7 @@ struct ImageEntryRow: View {
                 }
                 .frame(maxWidth: .infinity)
                 .cornerRadius(8)
+                .id(posterUrl)
 
                 let imageCount = entry.allImages.count
                 if imageCount > 1 {

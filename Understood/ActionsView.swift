@@ -381,6 +381,7 @@ struct ActionCardView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .cornerRadius(8, corners: [.topLeft, .topRight])
+                .id(posterUrl)
 
                 // Pin on image
                 if entry.isPinned {

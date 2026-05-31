@@ -36,7 +36,7 @@ struct BeliefLibraryView: View {
                 .ignoresSafeArea()
 
             if isLoading {
-                ProgressView("Loading beliefs...")
+                ProgressView("Loading connections...")
                     .foregroundStyle(.textSecondary)
             } else if let error = errorMessage {
                 VStack(spacing: 16) {
@@ -58,9 +58,9 @@ struct BeliefLibraryView: View {
                     Image(systemName: "brain.head.profile")
                         .font(.system(size: 80))
                         .foregroundStyle(Color.textPrimary.opacity(0.2))
-                    Text("No beliefs yet")
+                    Text("No connections yet")
                         .font(Typography.emptyState)
-                    Text("As you capture entries, the AI will\nidentify your underlying beliefs")
+                    Text("As you capture entries, the AI will\nidentify your underlying connections")
                         .font(Typography.subtitle)
                         .foregroundStyle(.textSecondary)
                         .multilineTextAlignment(.center)
@@ -91,7 +91,7 @@ struct BeliefLibraryView: View {
                         }
                         if !uncategorized.isEmpty {
                             BeliefSection(
-                                title: "Other Beliefs",
+                                title: "Other Connections",
                                 icon: "lightbulb.fill",
                                 beliefs: uncategorized
                             )
@@ -117,7 +117,7 @@ struct BeliefLibraryView: View {
             beliefs = try await supabase.fetchBeliefs()
             isLoading = false
         } catch {
-            errorMessage = "Could not load beliefs.\n\(error.localizedDescription)"
+            errorMessage = "Could not load connections.\n\(error.localizedDescription)"
             isLoading = false
             print("Fetch beliefs error: \(error)")
         }

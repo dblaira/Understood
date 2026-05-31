@@ -2,10 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Understood uses the camera to attach photos to entries and notes.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Understood uses the microphone to turn dictated thoughts into entry text.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Understood uses speech recognition to transcribe dictated entries.</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>PlayfairDisplay-Variable.ttf</string>

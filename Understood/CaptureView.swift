@@ -7,6 +7,10 @@
 
 import SwiftUI
 import PhotosUI
+import UIKit
+import AVFoundation
+import Combine
+import Speech
 import Auth
 
 struct CaptureView: View {
@@ -26,17 +30,37 @@ struct CaptureView: View {
     // Photo state
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var selectedImages: [UIImage] = []
+    @State private var isLoadingPhotos = false
+    @State private var photoLoadError: String?
+    @State private var showCamera = false
 
     // Save state
     @State private var isSaving = false
     @State private var savedEntry: Entry?
-    @State private var inferenceResult: InferEntryResponse?
-    @State private var showPostCapture = false
     @State private var errorMessage: String?
+    @StateObject private var speechCapture = SpeechCaptureController()
+    @State private var autosaveTask: Task<Void, Never>?
+    @State private var isAutosaving = false
+    @State private var lastAutosavedContent = ""
+    @State private var lastAutosavedCategory = ""
+    @State private var hasLocalDraft = false
+    @State private var saveFeedbackVisible = false
 
     let categories = ["Business", "Finance", "Health", "Spiritual", "Fun", "Social", "Romance"]
 
     var onSaved: (() -> Void)?
+
+    private var trimmedContent: String {
+        content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool {
+        !trimmedContent.isEmpty && !isSaving && !isLoadingPhotos && photoLoadError == nil
+    }
+
+    private var remainingImageSlots: Int {
+        max(0, Entry.maxImagesPerEntry - selectedImages.count)
+    }
 
     var body: some View {
         NavigationStack {
@@ -78,35 +102,30 @@ struct CaptureView: View {
                     HStack(spacing: 12) {
                         PhotosPicker(
                             selection: $selectedPhotoItems,
-                            maxSelectionCount: Entry.maxImagesPerEntry,
+                            maxSelectionCount: max(1, remainingImageSlots),
                             matching: .images,
                             photoLibrary: .shared()
                         ) {
-                            HStack(spacing: 5) {
+                            HStack(spacing: 6) {
                                 Image(systemName: "photo.on.rectangle.angled")
-                                    .font(.system(size: 14))
-                                if selectedImages.isEmpty {
-                                    Text("Add Photos")
-                                        .font(Typography.uiMedium)
-                                } else {
-                                    Text("\(selectedImages.count)/\(Entry.maxImagesPerEntry)")
-                                        .font(Typography.uiMedium)
-                                }
+                                    .font(.system(size: 15, weight: .semibold))
+                                Text(selectedImages.isEmpty ? "Add Photos" : "\(selectedImages.count)/\(Entry.maxImagesPerEntry) Photos")
+                                    .font(Typography.uiMedium)
+                                    .fontWeight(.semibold)
                             }
                             .foregroundStyle(.textSecondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.surfaceSubtle)
-                            .cornerRadius(16)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
                         }
                         .onChange(of: selectedPhotoItems) { _, items in
                             Task { await loadSelectedPhotos(items) }
                         }
+                        .disabled(remainingImageSlots == 0)
 
                         Spacer()
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
 
                     // MARK: - Selected Image Previews
 
@@ -144,6 +163,28 @@ struct CaptureView: View {
                         .padding(.bottom, 8)
                     }
 
+                    if isLoadingPhotos {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.75)
+                            Text("Preparing photos...")
+                                .font(Typography.small)
+                                .foregroundStyle(.textSecondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+                    }
+
+                    if let photoLoadError {
+                        Text(photoLoadError)
+                            .font(Typography.small)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 8)
+                    }
+
                     // MARK: - Content Area
 
                     TextEditor(text: $content)
@@ -175,55 +216,145 @@ struct CaptureView: View {
                             .padding(.horizontal, 20)
                             .padding(.bottom, 8)
                     }
+
+                    if let speechError = speechCapture.errorMessage {
+                        Text(speechError)
+                            .font(Typography.small)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 8)
+                    }
+
+                    if savedEntry != nil || isAutosaving || hasLocalDraft {
+                        Text(captureSaveStatusText)
+                            .font(Typography.small)
+                            .foregroundStyle(.textSecondary)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
-            .navigationTitle(captureTitle)
+            .safeAreaInset(edge: .bottom) {
+                bottomCaptureDock
+            }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color.understoodCream, for: .navigationBar)
+            .toolbarBackground(Color.sandyBrown, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .tint(.black)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .foregroundStyle(.textPrimary)
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        Task { await saveEntry() }
-                    } label: {
-                        if isSaving {
-                            ProgressView()
-                                .progressViewStyle(.circular)
-                                .scaleEffect(0.8)
-                        } else {
-                            Text("Save")
-                                .fontWeight(.bold)
-                        }
-                    }
-                    .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
-                    .foregroundStyle(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .textPrimary)
+                ToolbarItem(placement: .principal) {
+                    Text(captureTitle)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.black)
                 }
             }
             .onAppear {
-                isContentFocused = true
                 if let prefillCategory {
                     selectedCategory = prefillCategory
                 }
+                restoreLocalDraftIfNeeded()
             }
-            .sheet(isPresented: $showPostCapture) {
-                PostCaptureSheet(
-                    inferenceResult: inferenceResult,
-                    onDismiss: {
-                        showPostCapture = false
-                        dismiss()
-                    }
-                )
-                .presentationDetents([.fraction(0.35)])
-                .presentationDragIndicator(.visible)
+            .onChange(of: content) { _, _ in
+                scheduleAutosave()
+            }
+            .onChange(of: selectedCategory) { _, _ in
+                scheduleAutosave()
+            }
+            .onDisappear {
+                autosaveTask?.cancel()
+                speechCapture.stopTranscription()
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraImagePicker { image in
+                    guard let image, remainingImageSlots > 0 else { return }
+                    selectedImages.append(image)
+                    selectedPhotoItems.removeAll()
+                    photoLoadError = nil
+                }
+                .ignoresSafeArea()
             }
         }
+    }
+
+    private var bottomCaptureDock: some View {
+        HStack(spacing: 0) {
+            Button {
+                showCamera = true
+            } label: {
+                bottomIcon(systemName: "camera.fill", label: "Camera", foreground: .textPrimary, iconSize: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(remainingImageSlots == 0 || !UIImagePickerController.isSourceTypeAvailable(.camera))
+
+            Button {
+                isContentFocused = false
+                Task {
+                    await speechCapture.toggleTranscription(currentText: content) { transcript in
+                        content = transcript
+                    }
+                }
+            } label: {
+                bottomIcon(
+                    systemName: speechCapture.isRecording ? "stop.fill" : "mic.fill",
+                    label: speechCapture.isRecording ? "Stop" : "Dictate",
+                    foreground: .understoodCrimson,
+                    iconSize: 34
+                )
+                .scaleEffect(speechCapture.isRecording ? 1.08 : 1)
+                .opacity(speechCapture.isRecording ? 0.72 : 1)
+                .animation(
+                    speechCapture.isRecording
+                        ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                        : .default,
+                    value: speechCapture.isRecording
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                Task { await saveEntry() }
+            } label: {
+                if isSaving {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.textPrimary)
+                        .frame(width: 72, height: 58)
+                } else {
+                    bottomIcon(
+                        systemName: saveFeedbackVisible ? "checkmark.circle.fill" : "tray.and.arrow.down.fill",
+                        label: saveFeedbackVisible ? "Saved" : "Save",
+                        foreground: .textPrimary,
+                        iconSize: 24
+                    )
+                    .contentTransition(.symbolEffect(.replace))
+                }
+            }
+            .disabled(!canSave)
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(Color.sandyBrown)
+        .overlay(alignment: .top) {
+            Divider()
+        }
+    }
+
+    private func bottomIcon(systemName: String, label: String, foreground: Color, iconSize: CGFloat) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: systemName)
+                .font(.system(size: iconSize, weight: .bold))
+            Text(label)
+                .font(Typography.chipLabel)
+                .fontWeight(.semibold)
+        }
+        .foregroundStyle(foreground)
+        .frame(maxWidth: .infinity)
+        .frame(height: 58)
     }
 
     private var captureTitle: String {
@@ -232,6 +363,12 @@ struct CaptureView: View {
         case "note": return "New Note"
         default: return sourceEntryId != nil ? "New Story" : "Capture"
         }
+    }
+
+    private var captureSaveStatusText: String {
+        if isAutosaving { return "Saving..." }
+        if savedEntry != nil { return "Saved" }
+        return "Draft saved"
     }
 
     private var placeholderText: String {
@@ -245,6 +382,11 @@ struct CaptureView: View {
     // MARK: - Photo Loading
 
     private func loadSelectedPhotos(_ items: [PhotosPickerItem]) async {
+        await MainActor.run {
+            isLoadingPhotos = true
+            photoLoadError = nil
+        }
+
         var newImages: [UIImage] = []
         for item in items {
             if let data = try? await item.loadTransferable(type: Data.self),
@@ -254,16 +396,187 @@ struct CaptureView: View {
         }
         await MainActor.run {
             selectedImages = newImages
+            isLoadingPhotos = false
+            if newImages.count != items.count {
+                photoLoadError = "One or more photos could not be prepared. Remove and re-add them before saving."
+            }
         }
     }
 
     // MARK: - Save Logic
 
     private func saveEntry() async {
+        autosaveTask?.cancel()
+        speechCapture.stopTranscription()
         isSaving = true
+        saveFeedbackVisible = false
         errorMessage = nil
 
-        // Build metadata with auto-captured context
+        if let savedEntry {
+            do {
+                try await updateAutosavedEntryIfNeeded(savedEntry.id)
+                if !selectedImages.isEmpty {
+                    try await uploadImages(entryId: savedEntry.id, images: selectedImages)
+                }
+                onSaved?()
+                await showSaveFeedbackThenDismiss()
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Entry saved, but image upload failed: \(error.localizedDescription)"
+                    isSaving = false
+                }
+            }
+            return
+        }
+
+        let metadata = captureMetadata()
+
+        do {
+            // 1. Save to Supabase (text only, get entry ID)
+            let entry = try await supabase.createEntry(
+                content: content,
+                category: selectedCategory,
+                entryType: entryType,
+                sourceEntryId: sourceEntryId,
+                metadata: metadata
+            )
+            savedEntry = entry
+            markAutosaved()
+            Haptics.success()
+
+            // 2. Attach images before leaving capture so returning to the feed is reliable.
+            let imagesToUpload = selectedImages
+            if !imagesToUpload.isEmpty {
+                try await uploadImages(entryId: entry.id, images: imagesToUpload)
+            }
+
+            // 3. Notify feed to refresh
+            onSaved?()
+
+            await showSaveFeedbackThenDismiss()
+
+        } catch {
+            await MainActor.run {
+                if savedEntry == nil {
+                    errorMessage = "Failed to save: \(error.localizedDescription)"
+                } else {
+                    errorMessage = "Entry saved, but image upload failed: \(error.localizedDescription)"
+                }
+                isSaving = false
+            }
+            print("Save error: \(error)")
+        }
+    }
+
+    private func showSaveFeedbackThenDismiss() async {
+        await MainActor.run {
+            isSaving = false
+            saveFeedbackVisible = true
+            Haptics.light()
+        }
+
+        try? await Task.sleep(for: .milliseconds(450))
+
+        await MainActor.run {
+            dismiss()
+        }
+    }
+
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+
+        persistLocalDraft()
+
+        guard !trimmedContent.isEmpty, !isSaving, supabase.currentSession != nil else { return }
+
+        autosaveTask = Task {
+            try? await Task.sleep(for: .seconds(2.0))
+            guard !Task.isCancelled else { return }
+            await autoSaveEntry()
+        }
+    }
+
+    private func autoSaveEntry() async {
+        guard !trimmedContent.isEmpty, !isSaving, !isAutosaving else { return }
+        guard content != lastAutosavedContent || selectedCategory != lastAutosavedCategory else { return }
+
+        isAutosaving = true
+        defer { isAutosaving = false }
+
+        do {
+            if let savedEntry {
+                try await updateAutosavedEntryIfNeeded(savedEntry.id)
+            } else {
+                let entry = try await supabase.createEntry(
+                    content: content,
+                    category: selectedCategory,
+                    entryType: entryType,
+                    sourceEntryId: sourceEntryId,
+                    metadata: captureMetadata()
+                )
+                savedEntry = entry
+                onSaved?()
+                Haptics.light()
+                markAutosaved()
+            }
+        } catch {
+            print("Autosave error: \(error)")
+        }
+    }
+
+    private func updateAutosavedEntryIfNeeded(_ entryId: String) async throws {
+        guard content != lastAutosavedContent || selectedCategory != lastAutosavedCategory else { return }
+
+        try await supabase.updateEntry(id: entryId, fields: [
+            "content": content,
+            "category": selectedCategory
+        ])
+        markAutosaved()
+        onSaved?()
+    }
+
+    private func markAutosaved() {
+        lastAutosavedContent = content
+        lastAutosavedCategory = selectedCategory
+        clearLocalDraft()
+    }
+
+    private var localDraftKey: String {
+        let source = sourceEntryId ?? "root"
+        return "captureDraft.\(entryType).\(source)"
+    }
+
+    private func persistLocalDraft() {
+        guard !trimmedContent.isEmpty else {
+            clearLocalDraft()
+            return
+        }
+
+        let draft = CaptureLocalDraft(content: content, category: selectedCategory)
+        if let data = try? JSONEncoder().encode(draft) {
+            UserDefaults.standard.set(data, forKey: localDraftKey)
+            hasLocalDraft = true
+        }
+    }
+
+    private func restoreLocalDraftIfNeeded() {
+        guard content.isEmpty,
+              let data = UserDefaults.standard.data(forKey: localDraftKey),
+              let draft = try? JSONDecoder().decode(CaptureLocalDraft.self, from: data) else {
+            return
+        }
+
+        content = draft.content
+        selectedCategory = draft.category
+        hasLocalDraft = !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func clearLocalDraft() {
+        UserDefaults.standard.removeObject(forKey: localDraftKey)
+        hasLocalDraft = false
+    }
+
+    private func captureMetadata() -> EntryMetadata {
         let now = Date()
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: now)
@@ -279,75 +592,23 @@ struct CaptureView: View {
         dayFormatter.dateFormat = "EEEE"
         let dayOfWeek = dayFormatter.string(from: now)
 
-        let metadata = EntryMetadata(
+        return EntryMetadata(
             timestamp: ISO8601DateFormatter().string(from: now),
             dayOfWeek: dayOfWeek,
             timeOfDay: timeOfDay,
             device: "mobile"
         )
-
-        do {
-            // 1. Save to Supabase (text only, get entry ID)
-            let entry = try await supabase.createEntry(
-                content: content,
-                category: selectedCategory,
-                entryType: entryType,
-                sourceEntryId: sourceEntryId,
-                metadata: metadata
-            )
-            savedEntry = entry
-            Haptics.success()
-
-            // 2. Upload images in background (parallel with inference)
-            let imagesToUpload = selectedImages
-            if !imagesToUpload.isEmpty {
-                Task {
-                    await uploadImages(entryId: entry.id, images: imagesToUpload)
-                    onSaved?() // Refresh feed after images uploaded
-                }
-            }
-
-            // 3. Trigger AI inference in parallel
-            async let inferTask: () = runInference(entryId: entry.id, content: content)
-            async let enrichTask: () = runEnrichment(entryId: entry.id, content: content, timeOfDay: timeOfDay, dayOfWeek: dayOfWeek)
-
-            // Wait for inference and enrichment
-            _ = try? await (inferTask, enrichTask)
-
-            // 4. Trigger version generation in background
-            Task {
-                await runVersionGeneration(entry: entry)
-                onSaved?()
-            }
-
-            // 5. Notify feed to refresh
-            onSaved?()
-
-            // 6. Show post-capture sheet or dismiss
-            await MainActor.run {
-                isSaving = false
-                if inferenceResult != nil {
-                    showPostCapture = true
-                } else {
-                    dismiss()
-                }
-            }
-
-        } catch {
-            await MainActor.run {
-                errorMessage = "Failed to save: \(error.localizedDescription)"
-                isSaving = false
-            }
-            print("Save error: \(error)")
-        }
     }
 
     // MARK: - Image Upload
 
-    private func uploadImages(entryId: String, images: [UIImage]) async {
-        guard let userId = supabase.currentSession?.user.id.uuidString else { return }
+    private func uploadImages(entryId: String, images: [UIImage]) async throws {
+        guard let userId = supabase.currentSession?.user.id.uuidString else {
+            throw NSError(domain: "CaptureView", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
 
         var entryImages: [EntryImage] = []
+        var uploadErrors: [Error] = []
 
         for (index, image) in images.enumerated() {
             do {
@@ -364,145 +625,148 @@ struct CaptureView: View {
                 )
                 entryImages.append(entryImage)
             } catch {
+                uploadErrors.append(error)
                 print("Image upload error for index \(index): \(error)")
             }
         }
 
-        // Update the entry with the images array
         if !entryImages.isEmpty {
-            do {
-                try await supabase.updateEntryImages(entryId: entryId, images: entryImages)
-            } catch {
-                print("Failed to update entry images: \(error)")
-            }
+            try await supabase.updateEntryImages(entryId: entryId, images: entryImages)
         }
-    }
 
-    // MARK: - AI Processing
-
-    private func runInference(entryId: String, content: String) async {
-        do {
-            let result = try await supabase.inferEntry(content: content)
-            await MainActor.run {
-                self.inferenceResult = result
-            }
-
-            // Update entry with inferred fields
-            var updates: [String: String] = [:]
-            if let headline = result.headline { updates["headline"] = headline }
-            if let subheading = result.subheading { updates["subheading"] = subheading }
-            if let category = result.category { updates["category"] = category }
-            if let mood = result.mood { updates["mood"] = mood }
-            if let entryType = result.entryType { updates["entry_type"] = entryType }
-            if let connectionType = result.connectionType { updates["connection_type"] = connectionType }
-
-            if !updates.isEmpty {
-                try? await supabase.updateEntry(id: entryId, fields: updates)
-            }
-        } catch {
-            print("Inference error: \(error)")
-        }
-    }
-
-    private func runVersionGeneration(entry: Entry) async {
-        do {
-            try await supabase.generateVersions(entry: entry)
-            print("Versions generated successfully for entry \(entry.id)")
-        } catch {
-            print("Version generation error: \(error)")
-        }
-    }
-
-    private func runEnrichment(entryId: String, content: String, timeOfDay: String, dayOfWeek: String) async {
-        do {
-            let result = try await supabase.inferEnrichment(content: content, timeOfDay: timeOfDay, dayOfWeek: dayOfWeek)
-
-            // Update mood if enrichment returned one
-            if let moods = result.mood, let firstMood = moods.first {
-                try? await supabase.updateEntry(id: entryId, fields: ["mood": firstMood])
-            }
-
-            // Build enriched metadata and update
-            let enrichedMetadata = EntryMetadata(
-                activity: result.activity,
-                energy: result.energy,
-                environment: result.environment,
-                trigger: result.trigger,
-                dayOfWeek: dayOfWeek,
-                timeOfDay: timeOfDay,
-                device: "mobile"
+        if entryImages.count != images.count {
+            throw NSError(
+                domain: "CaptureView",
+                code: 500,
+                userInfo: [NSLocalizedDescriptionKey: "\(uploadErrors.count) image upload(s) failed. The text entry was saved."]
             )
-            try? await supabase.updateEntryMetadata(id: entryId, metadata: enrichedMetadata)
-        } catch {
-            print("Enrichment error: \(error)")
         }
     }
 }
 
-// MARK: - Post-Capture Sheet
+private struct CaptureLocalDraft: Codable {
+    let content: String
+    let category: String
+}
 
-struct PostCaptureSheet: View {
-    let inferenceResult: InferEntryResponse?
-    let onDismiss: () -> Void
+@MainActor
+final class SpeechCaptureController: ObservableObject {
+    @Published private(set) var isRecording = false
+    @Published var errorMessage: String?
 
-    var body: some View {
-        VStack(spacing: 16) {
-            if let result = inferenceResult {
-                VStack(spacing: 12) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.understoodCrimson)
+    private let audioEngine = AVAudioEngine()
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var baseText = ""
 
-                    if let headline = result.headline, !headline.isEmpty {
-                        Text(headline)
-                            .font(Typography.cardHeadlineLight)
-                            .multilineTextAlignment(.center)
+    func toggleTranscription(currentText: String, onTranscript: @escaping (String) -> Void) async {
+        if isRecording {
+            stopTranscription()
+            return
+        }
+
+        await startTranscription(currentText: currentText, onTranscript: onTranscript)
+    }
+
+    private func startTranscription(currentText: String, onTranscript: @escaping (String) -> Void) async {
+        errorMessage = nil
+
+        guard await requestSpeechAuthorization(), await requestMicrophoneAuthorization() else {
+            errorMessage = "Microphone or speech recognition permission is needed to dictate."
+            return
+        }
+
+        guard let speechRecognizer, speechRecognizer.isAvailable else {
+            errorMessage = "Speech recognition is not available right now."
+            return
+        }
+
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        let audioSession = AVAudioSession.sharedInstance()
+
+        do {
+            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            request.shouldReportPartialResults = true
+            recognitionRequest = request
+            baseText = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let inputNode = audioEngine.inputNode
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            inputNode.removeTap(onBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+                self?.recognitionRequest?.append(buffer)
+            }
+
+            audioEngine.prepare()
+            try audioEngine.start()
+            isRecording = true
+
+            recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
+                Task { @MainActor in
+                    guard let self else { return }
+
+                    if let result {
+                        let spokenText = result.bestTranscription.formattedString
+                        onTranscript(self.mergedTranscript(spokenText))
+
+                        if result.isFinal {
+                            self.stopTranscription()
+                        }
                     }
 
-                    HStack(spacing: 12) {
-                        if let category = result.category {
-                            Text(category.uppercased())
-                                .font(Typography.categoryLabel)
-                                .tracking(1.5)
-                                .foregroundStyle(.understoodCrimson)
-                        }
-                        if let mood = result.mood {
-                            Text(mood)
-                                .font(Typography.info)
-                                .foregroundStyle(.textSecondary)
-                        }
-                    }
-
-                    if result.entryType == "connection", let connectionType = result.connectionType {
-                        Text("Belief detected: \(connectionType.replacingOccurrences(of: "_", with: " ").capitalized)")
-                            .font(Typography.uiMedium)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.understoodCrimson.opacity(0.1))
-                            .cornerRadius(12)
+                    if error != nil {
+                        self.stopTranscription()
                     }
                 }
-
-                Text("Entry saved and analyzed")
-                    .font(Typography.small)
-                    .foregroundStyle(.textSecondary)
             }
-
-            Button {
-                onDismiss()
-            } label: {
-                Text("Done")
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.black)
-                    .foregroundStyle(.white)
-                    .cornerRadius(8)
-            }
-            .padding(.horizontal, 32)
+        } catch {
+            errorMessage = "Could not start dictation: \(error.localizedDescription)"
+            stopTranscription()
         }
-        .padding(.top, 20)
-        .padding(.bottom, 16)
+    }
+
+    private func mergedTranscript(_ spokenText: String) -> String {
+        guard !baseText.isEmpty else { return spokenText }
+        guard !spokenText.isEmpty else { return baseText }
+        return "\(baseText)\n\(spokenText)"
+    }
+
+    func stopTranscription() {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        isRecording = false
+
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func requestSpeechAuthorization() async -> Bool {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status == .authorized)
+            }
+        }
+    }
+
+    private func requestMicrophoneAuthorization() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVAudioSession.sharedInstance().requestRecordPermission { isGranted in
+                continuation.resume(returning: isGranted)
+            }
+        }
     }
 }
 

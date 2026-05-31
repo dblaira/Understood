@@ -2,7 +2,7 @@
 //  MainTabView.swift
 //  Understood
 //
-//  Menu-driven navigation: hamburger → full-page menu
+//  Bottom navigation with centered capture
 //
 
 import SwiftUI
@@ -15,7 +15,7 @@ struct MainTabView: View {
         @Bindable var nav = nav
 
         ZStack(alignment: .bottom) {
-            NavigationStack {
+            NavigationStack(path: $nav.navigationPath) {
                 ZStack {
                     Color.understoodCream
                         .ignoresSafeArea()
@@ -29,14 +29,12 @@ struct MainTabView: View {
                     case "extraction":
                         ExtractionsView()
                     case "timeline":
-                        // Phase 3 — placeholder until TimelineView is built
                         placeholderView(
-                            icon: "clock.arrow.circlepath",
-                            title: "Timeline",
-                            subtitle: "Coming soon — chronological archive of all entries"
+                            icon: "chart.xyaxis.line",
+                            title: "Patterns",
+                            subtitle: "Deterministic readouts and inference layers will live here."
                         )
                     case "note":
-                        // Phase 2 — placeholder until NotesView is built
                         placeholderView(
                             icon: "note.text",
                             title: "Notes",
@@ -49,62 +47,10 @@ struct MainTabView: View {
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text(navTitle)
-                            .font(Typography.uiMedium)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.textPrimary)
-                    }
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
-                            Haptics.light()
-                            nav.showMenu = true
-                        } label: {
-                            Image(systemName: "line.3.horizontal")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(.textPrimary)
-                        }
-                    }
-
-                    // Filter indicator
-                    if nav.currentFilter != "all" {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button {
-                                nav.currentFilter = "all"
-                                Haptics.selection()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text(nav.currentFilter.capitalized)
-                                        .font(Typography.chipLabel)
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 8, weight: .bold))
-                                }
-                                .foregroundStyle(.understoodCrimson)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.understoodCrimson.opacity(0.1))
-                                .clipShape(Capsule())
-                            }
-                        }
-                    }
-                }
+                .toolbar(.hidden, for: .navigationBar)
             }
 
-            // Floating capture button
-            Button {
-                Haptics.medium()
-                nav.showCapture = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(Color.textPrimary)
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
-            }
-            .padding(.bottom, 16)
+            BottomNavigationBar()
         }
         .fullScreenCover(isPresented: $nav.showMenu) {
             FullScreenMenuView(onSignOut: {
@@ -119,18 +65,12 @@ struct MainTabView: View {
                 // Views will refresh via their own .task modifiers
             })
         }
-    }
-
-    /// Dynamic nav title based on current section
-    private var navTitle: String {
-        switch nav.currentSection {
-        case "story": return "Understood"
-        case "note": return "Notes"
-        case "action": return "Actions"
-        case "connection": return "Beliefs"
-        case "extraction": return "Understood"
-        case "timeline": return "Timeline"
-        default: return "Understood"
+        .sheet(isPresented: $nav.showSettings) {
+            SettingsView(onSignOut: {
+                Task {
+                    try? await supabase.signOut()
+                }
+            })
         }
     }
 
@@ -147,4 +87,115 @@ struct MainTabView: View {
 #Preview {
     MainTabView()
         .environment(AppNavigationState())
+}
+
+private struct BottomNavigationBar: View {
+    @Environment(AppNavigationState.self) private var nav
+    private let barBackground = Color(red: 0.80, green: 0.70, blue: 0.58)
+    private let inactiveColor = Color(red: 0.34, green: 0.27, blue: 0.21).opacity(0.68)
+
+    private var leadingSections: [(id: String, label: String, icon: String)] {
+        Array(AppNavigationState.sections.prefix(2))
+    }
+
+    private var trailingSections: [(id: String, label: String, icon: String)] {
+        Array(AppNavigationState.sections.suffix(2))
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            barBackground
+
+            HStack(alignment: .center, spacing: 0) {
+                ForEach(leadingSections, id: \.id) { section in
+                    navButton(section)
+                }
+
+                Spacer()
+                    .frame(maxWidth: .infinity)
+
+                ForEach(trailingSections, id: \.id) { section in
+                    navButton(section)
+                }
+            }
+            .padding(.horizontal, 12)
+            .offset(y: 12)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.22))
+                .frame(height: 1)
+
+            Button {
+                Haptics.medium()
+                nav.showCapture = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 70, height: 70)
+                    .background(Color.textPrimary)
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Capture")
+            .offset(y: -12)
+        }
+        .frame(height: 48)
+        .background(barBackground.ignoresSafeArea(edges: .bottom))
+    }
+
+    private func navButton(_ section: (id: String, label: String, icon: String)) -> some View {
+        Button {
+            Haptics.selection()
+            nav.navigate(to: section.id)
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 22, weight: nav.currentSection == section.id ? .semibold : .regular))
+
+                Text(section.label)
+                    .font(Typography.chipLabel)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(nav.currentSection == section.id ? .understoodCrimson : inactiveColor)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(section.label)
+    }
+}
+
+private struct AppMenuButton: View {
+    @Environment(AppNavigationState.self) private var nav
+
+    var body: some View {
+        VStack {
+            HStack {
+                Spacer()
+
+                Button {
+                    Haptics.light()
+                    nav.showMenu = true
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.black.opacity(0.78))
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.16), radius: 10, x: 0, y: 4)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open menu")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
+            Spacer()
+        }
+    }
 }

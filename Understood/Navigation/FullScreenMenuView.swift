@@ -52,15 +52,6 @@ struct FullScreenMenuView: View {
                             }
                         }
 
-                        // Timeline
-                        sectionButton(
-                            label: "ALL ENTRIES",
-                            isActive: nav.currentSection == "timeline"
-                        ) {
-                            Haptics.light()
-                            nav.navigate(to: "timeline")
-                        }
-                        .padding(.top, 8)
                     }
                     .padding(.horizontal, 24)
 
@@ -120,7 +111,10 @@ struct FullScreenMenuView: View {
                     HStack(spacing: 32) {
                         Button {
                             Haptics.light()
-                            // Settings will be added in Phase 7
+                            nav.showMenu = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                nav.showSettings = true
+                            }
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "gearshape")

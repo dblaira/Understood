@@ -22,7 +22,7 @@ class SupabaseService {
     }
 
     /// Base URL for the Vercel API routes
-    static let apiBaseURL = "https://understood.app"
+    static let apiBaseURL = "https://www.understood.sh"
 
     private init() {
         let supabaseURL = URL(string: "https://wqdacfrzurhpsiuvzxwo.supabase.co")!
@@ -249,7 +249,7 @@ class SupabaseService {
             category: category,
             entryType: entryType,
             userId: userId.uuidString,
-            generatingVersions: true,
+            generatingVersions: false,
             sourceEntryId: sourceEntryId,
             metadata: metadata
         )
@@ -345,6 +345,15 @@ class SupabaseService {
         try await client
             .from("entries")
             .update(fields)
+            .eq("id", value: id)
+            .execute()
+    }
+
+    /// Update the editable fields for an entry.
+    func updateEntry(id: String, payload: EntryUpdatePayload) async throws {
+        try await client
+            .from("entries")
+            .update(payload)
             .eq("id", value: id)
             .execute()
     }
@@ -511,31 +520,88 @@ class SupabaseService {
     /// Upload an image to Supabase Storage entry-photos bucket
     /// Returns the public URL of the uploaded image
     func uploadEntryImage(image: UIImage, userId: String, entryId: String, index: Int) async throws -> String {
-        // Resize to max 1200px width
+        guard let token = currentSession?.accessToken else {
+            throw NSError(domain: "SupabaseService", code: 401,
+                          userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+
+        guard let url = URL(string: "\(Self.apiBaseURL)/api/upload-photo") else {
+            throw NSError(domain: "SupabaseService", code: 400,
+                          userInfo: [NSLocalizedDescriptionKey: "Invalid upload URL"])
+        }
+
         let resized = resizeImage(image)
 
-        // Convert to JPEG data
         guard let jpegData = resized.jpegData(compressionQuality: 0.85) else {
             throw NSError(domain: "SupabaseService", code: 500,
                           userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to JPEG"])
         }
 
-        // Build file path: {userId}/{entryId}-{index}-{timestamp}.jpg
-        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
-        let fileName = "\(entryId)-\(index)-\(timestamp).jpg"
-        let filePath = "\(userId)/\(fileName)"
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        // Upload using Supabase Storage
-        try await client.storage
-            .from("entry-photos")
-            .upload(filePath, data: jpegData, options: .init(contentType: "image/jpeg", upsert: true))
+        var body = Data()
+        appendMultipartField(name: "entryId", value: entryId, boundary: boundary, to: &body)
+        appendMultipartFile(
+            fieldName: "file",
+            fileName: "\(entryId)-\(index).jpg",
+            contentType: "image/jpeg",
+            data: jpegData,
+            boundary: boundary,
+            to: &body
+        )
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
-        // Get public URL
-        let publicUrl = try client.storage
-            .from("entry-photos")
-            .getPublicURL(path: filePath)
+        let (data, response) = try await URLSession.shared.upload(for: request, from: body)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "SupabaseService", code: 500,
+                          userInfo: [NSLocalizedDescriptionKey: "Invalid upload response"])
+        }
 
-        return publicUrl.absoluteString
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let message = parseUploadError(data) ?? "Image upload failed with status \(httpResponse.statusCode)"
+            throw NSError(domain: "SupabaseService", code: httpResponse.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: message])
+        }
+
+        let uploadResponse = try JSONDecoder().decode(UploadPhotoResponse.self, from: data)
+        guard let publicUrl = uploadResponse.photoUrl ?? uploadResponse.uploadedUrls?.first else {
+            throw NSError(domain: "SupabaseService", code: 500,
+                          userInfo: [NSLocalizedDescriptionKey: "Upload response did not include an image URL"])
+        }
+
+        return publicUrl
+    }
+
+    private func appendMultipartField(name: String, value: String, boundary: String, to body: inout Data) {
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(value)\r\n".data(using: .utf8)!)
+    }
+
+    private func appendMultipartFile(
+        fieldName: String,
+        fileName: String,
+        contentType: String,
+        data: Data,
+        boundary: String,
+        to body: inout Data
+    ) {
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+        body.append(data)
+        body.append("\r\n".data(using: .utf8)!)
+    }
+
+    private func parseUploadError(_ data: Data) -> String? {
+        if let response = try? JSONDecoder().decode(UploadErrorResponse.self, from: data) {
+            return response.error
+        }
+        return String(data: data, encoding: .utf8)
     }
 
     /// Update an entry's images array and legacy photo_url field
@@ -543,6 +609,7 @@ class SupabaseService {
         let payload = ImagesUpdatePayload(
             images: images,
             photoUrl: images.first?.url,
+            imageUrl: nil,
             updatedAt: ISO8601DateFormatter().string(from: Date())
         )
         try await client
@@ -550,6 +617,7 @@ class SupabaseService {
             .update(payload)
             .eq("id", value: entryId)
             .execute()
+        print("SupabaseService: updated images for entry \(entryId) with \(images.count) image(s)")
     }
 }
 
@@ -610,15 +678,81 @@ struct MetadataUpdatePayload: Encodable {
     let metadata: EntryMetadata
 }
 
+struct EntryUpdatePayload: Encodable {
+    let headline: String
+    let subheading: String
+    let content: String
+    let category: String
+    let entryType: String
+    let dueDate: String?
+    let completedAt: String?
+    let updatedAt: String
+    let shouldClearDueDate: Bool
+    let shouldClearCompletedAt: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case headline
+        case subheading
+        case content
+        case category
+        case entryType = "entry_type"
+        case dueDate = "due_date"
+        case completedAt = "completed_at"
+        case updatedAt = "updated_at"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(headline, forKey: .headline)
+        try container.encode(subheading, forKey: .subheading)
+        try container.encode(content, forKey: .content)
+        try container.encode(category, forKey: .category)
+        try container.encode(entryType, forKey: .entryType)
+        try container.encode(updatedAt, forKey: .updatedAt)
+
+        if let dueDate {
+            try container.encode(dueDate, forKey: .dueDate)
+        } else if shouldClearDueDate {
+            try container.encodeNil(forKey: .dueDate)
+        }
+
+        if let completedAt {
+            try container.encode(completedAt, forKey: .completedAt)
+        } else if shouldClearCompletedAt {
+            try container.encodeNil(forKey: .completedAt)
+        }
+    }
+}
+
 struct ImagesUpdatePayload: Encodable {
     let images: [EntryImage]
     let photoUrl: String?
+    let imageUrl: String?
     let updatedAt: String
 
     enum CodingKeys: String, CodingKey {
         case images
         case photoUrl = "photo_url"
+        case imageUrl = "image_url"
         case updatedAt = "updated_at"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(images, forKey: .images)
+        try container.encode(updatedAt, forKey: .updatedAt)
+
+        if let photoUrl {
+            try container.encode(photoUrl, forKey: .photoUrl)
+        } else {
+            try container.encodeNil(forKey: .photoUrl)
+        }
+
+        if let imageUrl {
+            try container.encode(imageUrl, forKey: .imageUrl)
+        } else {
+            try container.encodeNil(forKey: .imageUrl)
+        }
     }
 }
 
@@ -655,4 +789,13 @@ struct InferEnrichmentResponse: Codable {
     let mood: [String]?
     let environment: String?
     let trigger: String?
+}
+
+struct UploadPhotoResponse: Codable {
+    let photoUrl: String?
+    let uploadedUrls: [String]?
+}
+
+struct UploadErrorResponse: Codable {
+    let error: String
 }

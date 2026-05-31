@@ -6,17 +6,20 @@
 //
 
 import SwiftUI
+import PhotosUI
+import UIKit
+import Auth
 
 struct EntryDetailView: View {
     @State var entry: Entry
     let supabase = SupabaseService.shared
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedVersion: Int? = nil
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var currentImagePage = 0
     @State private var showLinkedCapture = false
+    @State private var showEntryEditor = false
     @State private var linkedEntryType: String = "action"
     @State private var starSpinning = false
 
@@ -56,6 +59,24 @@ struct EntryDetailView: View {
                             .foregroundStyle(.understoodCrimson)
 
                         Spacer()
+
+                        Button {
+                            showEntryEditor = true
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Edit")
+                                    .font(Typography.uiMedium)
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundStyle(.textSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.surfaceSubtle)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
 
                         // Featured star (stories only)
                         if entry.isStory {
@@ -114,73 +135,6 @@ struct EntryDetailView: View {
                     .lineSpacing(6)
                     .foregroundStyle(Color.textPrimary.opacity(0.9))
 
-                // MARK: - AI Versions
-
-                if let versions = entry.versions, !versions.isEmpty {
-                    Divider()
-                        .foregroundStyle(.borderMedium)
-
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("AI PERSPECTIVES")
-                            .font(Typography.sectionHeader)
-                            .tracking(1.5)
-                            .foregroundStyle(.textMuted)
-
-                        // Version tabs
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(Array(versions.enumerated()), id: \.offset) { index, version in
-                                    Button {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            selectedVersion = selectedVersion == index ? nil : index
-                                        }
-                                    } label: {
-                                        Text(version.name)
-                                            .font(Typography.uiMedium)
-                                            .fontWeight(.semibold)
-                                            .padding(.horizontal, 16)
-                                            .padding(.vertical, 8)
-                                            .background(selectedVersion == index ? Color.black : Color.surfaceSubtle)
-                                            .foregroundStyle(selectedVersion == index ? Color.white : Color.textSecondary)
-                                            .cornerRadius(20)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Selected version content — styled per voice
-                        if let selected = selectedVersion, selected < versions.count {
-                            let version = versions[selected]
-                            let voiceName = version.name.lowercased()
-                            let bodyText = stripHTML(version.body ?? version.content)
-
-                            if voiceName.contains("literary") {
-                                LiteraryVersionView(title: version.title, bodyText: bodyText)
-                                    .transition(.opacity)
-                            } else if voiceName.contains("news") {
-                                NewsVersionView(title: version.title, bodyText: bodyText)
-                                    .transition(.opacity)
-                            } else if voiceName.contains("poetic") || voiceName.contains("poet") {
-                                PoeticVersionView(title: version.title, bodyText: bodyText)
-                                    .transition(.opacity)
-                            } else {
-                                HumorousVersionView(title: version.title, bodyText: bodyText)
-                                    .transition(.opacity)
-                            }
-                        }
-                    }
-                } else if entry.generatingVersions == true {
-                    // Loading state for versions
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text("Generating perspectives...")
-                            .font(Typography.uiMedium)
-                            .foregroundStyle(.textMuted)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                }
-
                 // MARK: - Context
 
                 if let metadata = entry.metadata {
@@ -209,16 +163,6 @@ struct EntryDetailView: View {
                     }
                 }
 
-                // MARK: - Water Cycle
-
-                Divider()
-                    .foregroundStyle(.borderMedium)
-
-                WaterCycleButtons(entry: entry) { entryType in
-                    linkedEntryType = entryType
-                    showLinkedCapture = true
-                }
-
                 // MARK: - Delete
 
                 Divider()
@@ -245,6 +189,29 @@ struct EntryDetailView: View {
         }
         .background(Color.understoodCream.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbarBackground(Color.sandyBrown, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .tint(.black)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    HeaderIconButton(systemName: "chevron.left")
+                }
+                .buttonStyle(.plain)
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showEntryEditor = true
+                } label: {
+                    HeaderIconButton(systemName: "pencil")
+                }
+                .buttonStyle(.plain)
+            }
+        }
         .alert("Delete Entry", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -253,13 +220,12 @@ struct EntryDetailView: View {
         } message: {
             Text("This will permanently delete this entry and cannot be undone.")
         }
-        .sheet(isPresented: $showLinkedCapture) {
-            CaptureView(
-                sourceEntryId: entry.id,
-                entryType: linkedEntryType,
-                prefillCategory: entry.category,
-                onSaved: {}
-            )
+        .sheet(isPresented: $showEntryEditor) {
+            EntryEditorView(entry: entry) { updatedEntry in
+                entry = updatedEntry
+                currentImagePage = min(currentImagePage, max(0, updatedEntry.allImages.count - 1))
+                onFeaturedChanged?()
+            }
         }
     }
 
@@ -374,6 +340,519 @@ struct EntryDetailView: View {
             text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - Entry Editor
+
+struct EntryEditorView: View {
+    let entry: Entry
+    let onSaved: (Entry) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var headline: String
+    @State private var subheading: String
+    @State private var content: String
+    @State private var selectedCategory: String
+    @State private var selectedEntryType: String
+    @State private var hasDueDate: Bool
+    @State private var dueDate: Date
+    @State private var isActionCompleted: Bool
+    @State private var retainedImages: [EntryImage]
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var selectedImages: [UIImage] = []
+    @State private var isLoadingPhotos = false
+    @State private var showCamera = false
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    private let supabase = SupabaseService.shared
+    private let categories = ["Business", "Finance", "Health", "Spiritual", "Fun", "Social", "Romance"]
+    private let entryTypes: [(id: String, label: String)] = [
+        ("story", "Story"),
+        ("connection", "Connection")
+    ]
+
+    init(entry: Entry, onSaved: @escaping (Entry) -> Void) {
+        self.entry = entry
+        self.onSaved = onSaved
+        _headline = State(initialValue: entry.headline)
+        _subheading = State(initialValue: entry.subheading ?? "")
+        _content = State(initialValue: entry.content)
+        _selectedCategory = State(initialValue: entry.category)
+        _selectedEntryType = State(initialValue: entry.entryType == "connection" ? "connection" : "story")
+        _hasDueDate = State(initialValue: entry.parsedDueDate != nil)
+        _dueDate = State(initialValue: entry.parsedDueDate ?? Date())
+        _isActionCompleted = State(initialValue: entry.isCompleted)
+        _retainedImages = State(initialValue: entry.allImages)
+    }
+
+    private var cleanedContent: String {
+        content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var remainingSlots: Int {
+        max(0, availableNewImageSlots - selectedImages.count)
+    }
+
+    private var availableNewImageSlots: Int {
+        max(0, Entry.maxImagesPerEntry - retainedImages.count)
+    }
+
+    private var canSave: Bool {
+        !cleanedContent.isEmpty && !isLoadingPhotos && !isSaving && errorMessage == nil
+    }
+
+    private var isEditingAction: Bool {
+        selectedEntryType == "action"
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("TYPE")
+                            .font(Typography.sectionHeader)
+                            .tracking(1.5)
+                            .foregroundStyle(.textMuted)
+
+                        HStack(spacing: 8) {
+                            ForEach(entryTypes, id: \.id) { type in
+                                Button {
+                                    selectedEntryType = type.id
+                                    Haptics.selection()
+                                } label: {
+                                    Text(type.label)
+                                        .font(Typography.uiMedium)
+                                        .foregroundStyle(selectedEntryType == type.id ? .white : .textPrimary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(selectedEntryType == type.id ? Color.black : Color.surfaceSubtle)
+                                        .cornerRadius(8)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("TITLE")
+                            .font(Typography.sectionHeader)
+                            .tracking(1.5)
+                            .foregroundStyle(.textMuted)
+
+                        TextField("Optional title", text: $headline, axis: .vertical)
+                            .font(Typography.editor)
+                            .foregroundStyle(.textPrimary)
+                            .padding(12)
+                            .background(Color.surfaceSubtle)
+                            .cornerRadius(8)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("SUBTITLE")
+                            .font(Typography.sectionHeader)
+                            .tracking(1.5)
+                            .foregroundStyle(.textMuted)
+
+                        TextField("Optional subtitle", text: $subheading, axis: .vertical)
+                            .font(Typography.body)
+                            .foregroundStyle(.textPrimary)
+                            .padding(12)
+                            .background(Color.surfaceSubtle)
+                            .cornerRadius(8)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("BODY")
+                            .font(Typography.sectionHeader)
+                            .tracking(1.5)
+                            .foregroundStyle(.textMuted)
+
+                        TextEditor(text: $content)
+                            .font(Typography.editor)
+                            .foregroundStyle(.textPrimary)
+                            .lineSpacing(4)
+                            .frame(minHeight: 220)
+                            .padding(8)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.surfaceSubtle)
+                            .cornerRadius(8)
+                    }
+
+                    if !retainedImages.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("CURRENT PHOTOS")
+                                .font(Typography.sectionHeader)
+                                .tracking(1.5)
+                                .foregroundStyle(.textMuted)
+
+                            EditablePhotoThumbnailStrip(images: retainedImages) { index in
+                                retainedImages.remove(at: index)
+                                retainedImages = normalizedImages(retainedImages)
+                                currentPhotoSelectionTrimmedToLimit()
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("ADD PHOTOS")
+                            .font(Typography.sectionHeader)
+                            .tracking(1.5)
+                            .foregroundStyle(.textMuted)
+
+                        if availableNewImageSlots > 0 {
+                            HStack(spacing: 10) {
+                                PhotosPicker(
+                                    selection: $selectedPhotoItems,
+                                    maxSelectionCount: max(1, remainingSlots),
+                                    matching: .images,
+                                    photoLibrary: .shared()
+                                ) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "photo.on.rectangle.angled")
+                                        Text(selectedImages.isEmpty ? "Choose Photos" : "\(selectedImages.count) Selected")
+                                        Spacer()
+                                    }
+                                    .font(Typography.uiMedium)
+                                    .foregroundStyle(.textPrimary)
+                                    .padding(14)
+                                    .background(Color.surfaceSubtle)
+                                    .cornerRadius(8)
+                                }
+                                .onChange(of: selectedPhotoItems) { _, items in
+                                    Task { await loadSelectedPhotos(items) }
+                                }
+                                .disabled(remainingSlots == 0)
+
+                                Button {
+                                    showCamera = true
+                                } label: {
+                                    Image(systemName: "camera.fill")
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(.textPrimary)
+                                        .frame(width: 50, height: 50)
+                                        .background(Color.surfaceSubtle)
+                                        .cornerRadius(8)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(remainingSlots == 0 || !UIImagePickerController.isSourceTypeAvailable(.camera))
+                            }
+
+                            if !selectedImages.isEmpty {
+                                SelectedPhotoStrip(images: selectedImages) { index in
+                                    selectedImages.remove(at: index)
+                                    if index < selectedPhotoItems.count {
+                                        selectedPhotoItems.remove(at: index)
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("This entry already has the maximum of \(Entry.maxImagesPerEntry) photos.")
+                                .font(Typography.body)
+                                .foregroundStyle(.textSecondary)
+                        }
+
+                        if isLoadingPhotos {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .scaleEffect(0.75)
+                                Text("Preparing photos...")
+                                    .font(Typography.small)
+                                    .foregroundStyle(.textSecondary)
+                            }
+                        }
+
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(Typography.small)
+                                .foregroundStyle(.red)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("CATEGORY")
+                            .font(Typography.sectionHeader)
+                            .tracking(1.5)
+                            .foregroundStyle(.textMuted)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(categories, id: \.self) { category in
+                                    Button {
+                                        selectedCategory = category
+                                        Haptics.selection()
+                                    } label: {
+                                        Text(category)
+                                            .font(Typography.uiMedium)
+                                            .foregroundStyle(selectedCategory == category ? .white : .textPrimary)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(selectedCategory == category ? Color.black : Color.surfaceSubtle)
+                                            .cornerRadius(8)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(24)
+            }
+            .background(Color.understoodCream.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.sandyBrown, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .tint(.black)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HeaderPillButton(title: "Cancel", isEnabled: !isSaving)
+                    }
+                    .disabled(isSaving)
+                    .buttonStyle(.plain)
+                }
+
+                ToolbarItem(placement: .principal) {
+                    Text("Edit Entry")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.black)
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        Task { await saveEntry() }
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.white)
+                                .frame(width: 56, height: 46)
+                                .background(Color.black.opacity(0.9))
+                                .clipShape(Capsule())
+                        } else {
+                            HeaderPillButton(title: "Save", isEnabled: canSave)
+                        }
+                    }
+                    .disabled(!canSave)
+                    .buttonStyle(.plain)
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraImagePicker { image in
+                    guard let image, remainingSlots > 0 else { return }
+                    selectedImages.append(image)
+                    selectedPhotoItems.removeAll()
+                    errorMessage = nil
+                }
+                .ignoresSafeArea()
+            }
+        }
+    }
+
+    private func loadSelectedPhotos(_ items: [PhotosPickerItem]) async {
+        await MainActor.run {
+            isLoadingPhotos = true
+            errorMessage = nil
+        }
+
+        var loadedImages: [UIImage] = []
+        for item in items {
+            if let data = try? await item.loadTransferable(type: Data.self),
+               let image = UIImage(data: data) {
+                loadedImages.append(image)
+            }
+        }
+
+        await MainActor.run {
+            selectedImages = loadedImages
+            isLoadingPhotos = false
+            if loadedImages.count != items.count {
+                errorMessage = "One or more photos could not be prepared. Remove and re-add them before saving."
+            }
+        }
+    }
+
+    private func saveEntry() async {
+        isSaving = true
+        errorMessage = nil
+
+        do {
+            guard let userId = supabase.currentSession?.user.id.uuidString else {
+                throw NSError(domain: "EntryEditorView", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+            }
+
+            var updatedImages = normalizedImages(retainedImages)
+            let startingOrder = updatedImages.count
+
+            for (index, image) in selectedImages.enumerated() {
+                print("EntryEditorView: uploading image \(index + 1) of \(selectedImages.count) for entry \(entry.id)")
+                let url = try await supabase.uploadEntryImage(
+                    image: image,
+                    userId: userId,
+                    entryId: entry.id,
+                    index: startingOrder + index
+                )
+                print("EntryEditorView: uploaded image \(index + 1) to \(url)")
+                updatedImages.append(EntryImage(
+                    url: url,
+                    isPoster: updatedImages.isEmpty,
+                    order: startingOrder + index
+                ))
+            }
+
+            updatedImages = normalizedImages(updatedImages)
+            let updatedAt = ISO8601DateFormatter().string(from: Date())
+            let trimmedHeadline = headline.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedSubheading = subheading.trimmingCharacters(in: .whitespacesAndNewlines)
+            let dueDateValue = isEditingAction && hasDueDate ? ISO8601DateFormatter().string(from: dueDate) : nil
+            let completedAtValue: String? = isEditingAction && isActionCompleted
+                ? (entry.completedAt ?? updatedAt)
+                : nil
+
+            let payload = EntryUpdatePayload(
+                headline: trimmedHeadline,
+                subheading: trimmedSubheading,
+                content: cleanedContent,
+                category: selectedCategory,
+                entryType: selectedEntryType,
+                dueDate: dueDateValue,
+                completedAt: completedAtValue,
+                updatedAt: updatedAt,
+                shouldClearDueDate: entry.dueDate != nil || !isEditingAction,
+                shouldClearCompletedAt: entry.completedAt != nil || !isEditingAction
+            )
+            try await supabase.updateEntry(id: entry.id, payload: payload)
+            print("EntryEditorView: updated text fields for entry \(entry.id)")
+            try await supabase.updateEntryImages(entryId: entry.id, images: updatedImages)
+            print("EntryEditorView: saved \(updatedImages.count) image(s) for entry \(entry.id)")
+
+            var updatedEntry = entry
+            updatedEntry.headline = trimmedHeadline
+            updatedEntry.subheading = trimmedSubheading
+            updatedEntry.content = cleanedContent
+            updatedEntry.category = selectedCategory
+            updatedEntry.entryType = selectedEntryType
+            updatedEntry.dueDate = dueDateValue
+            updatedEntry.completedAt = completedAtValue
+            updatedEntry.images = updatedImages
+            updatedEntry.photoUrl = updatedImages.first?.url
+            updatedEntry.imageUrl = nil
+            updatedEntry.updatedAt = updatedAt
+
+            await MainActor.run {
+                Haptics.success()
+                onSaved(updatedEntry)
+                dismiss()
+            }
+        } catch {
+            print("EntryEditorView save error for entry \(entry.id): \(error)")
+            await MainActor.run {
+                Haptics.error()
+                errorMessage = "Could not save entry: \(error.localizedDescription)"
+                isSaving = false
+            }
+        }
+    }
+
+    private func normalizedImages(_ images: [EntryImage]) -> [EntryImage] {
+        images.enumerated().map { index, image in
+            EntryImage(
+                url: image.url,
+                isPoster: index == 0,
+                order: index,
+                focalX: image.focalX,
+                focalY: image.focalY
+            )
+        }
+    }
+
+    private func currentPhotoSelectionTrimmedToLimit() {
+        let allowedSelectionCount = availableNewImageSlots
+        if selectedImages.count > allowedSelectionCount {
+            selectedImages = Array(selectedImages.prefix(allowedSelectionCount))
+            selectedPhotoItems = Array(selectedPhotoItems.prefix(allowedSelectionCount))
+        }
+    }
+}
+
+struct EditablePhotoThumbnailStrip: View {
+    let images: [EntryImage]
+    let onRemove: (Int) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(Array(images.enumerated()), id: \.offset) { index, entryImage in
+                    ZStack(alignment: .topTrailing) {
+                        AsyncImage(url: URL(string: entryImage.url)) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            case .failure:
+                                Color.surfaceSubtle
+                                    .overlay {
+                                        Image(systemName: "photo")
+                                            .foregroundStyle(.textMuted)
+                                    }
+                            case .empty:
+                                Color.surfaceSubtle
+                                    .overlay(ProgressView())
+                            @unknown default:
+                                Color.surfaceSubtle
+                            }
+                        }
+                        .frame(width: 84, height: 84)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        Button {
+                            onRemove(index)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 19))
+                                .foregroundStyle(.white, Color.red)
+                        }
+                        .offset(x: 5, y: -5)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct SelectedPhotoStrip: View {
+    let images: [UIImage]
+    let onRemove: (Int) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(Array(images.enumerated()), id: \.offset) { index, image in
+                    ZStack(alignment: .topTrailing) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 84, height: 84)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        Button {
+                            onRemove(index)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.white, .black.opacity(0.65))
+                        }
+                        .offset(x: 5, y: -5)
+                    }
+                }
+            }
+        }
     }
 }
 

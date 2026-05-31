@@ -25,7 +25,7 @@ struct NotificationPromptView: View {
                 Text("Stay Connected")
                     .font(Typography.headline)
                     .foregroundStyle(.textPrimary)
-                Text("to Your Beliefs")
+                Text("to Your Connections")
                     .font(Typography.headline)
                     .foregroundStyle(.textPrimary)
             }
@@ -38,7 +38,7 @@ struct NotificationPromptView: View {
                 )
                 PromptFeatureRow(
                     icon: "arrow.triangle.2.circlepath",
-                    text: "Revisit beliefs at the right moment to reinforce growth"
+                    text: "Revisit connections at the right moment to reinforce growth"
                 )
                 PromptFeatureRow(
                     icon: "hand.thumbsup.fill",

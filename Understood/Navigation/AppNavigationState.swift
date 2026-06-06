@@ -46,6 +46,16 @@ class AppNavigationState {
         showMenu = false
     }
 
+    /// Return to the app's home surface from any sheet or pushed detail.
+    func returnHome() {
+        navigationPath = NavigationPath()
+        currentSection = "story"
+        currentFilter = "all"
+        showMenu = false
+        showSettings = false
+        showCapture = false
+    }
+
     /// Set filter and dismiss the menu
     func setFilter(_ filter: String) {
         currentFilter = filter

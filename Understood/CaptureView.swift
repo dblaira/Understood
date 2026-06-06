@@ -15,6 +15,7 @@ import Auth
 
 struct CaptureView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppNavigationState.self) private var nav
     let supabase = SupabaseService.shared
 
     // Water Cycle linked entry params (optional)
@@ -123,6 +124,8 @@ struct CaptureView: View {
                         .disabled(remainingImageSlots == 0)
 
                         Spacer()
+
+                        saveRowButton
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 6)
@@ -225,14 +228,6 @@ struct CaptureView: View {
                             .padding(.bottom, 8)
                     }
 
-                    if savedEntry != nil || isAutosaving || hasLocalDraft {
-                        Text(captureSaveStatusText)
-                            .font(Typography.small)
-                            .foregroundStyle(.textSecondary)
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -279,14 +274,27 @@ struct CaptureView: View {
     }
 
     private var bottomCaptureDock: some View {
-        HStack(spacing: 0) {
-            Button {
-                showCamera = true
-            } label: {
-                bottomIcon(systemName: "camera.fill", label: "Camera", foreground: .textPrimary, iconSize: 24)
+        ZStack {
+            HStack(spacing: 0) {
+                Button {
+                    returnHomeFromCapture()
+                } label: {
+                    bottomIcon(systemName: "house.fill", label: "Home", foreground: .textPrimary, iconSize: 27)
+                        .frame(width: 112)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    showCamera = true
+                } label: {
+                    bottomIcon(systemName: "camera.fill", label: "Camera", foreground: .textPrimary, iconSize: 27)
+                        .frame(width: 112)
+                }
+                .buttonStyle(.plain)
+                .disabled(remainingImageSlots == 0 || !UIImagePickerController.isSourceTypeAvailable(.camera))
             }
-            .buttonStyle(.plain)
-            .disabled(remainingImageSlots == 0 || !UIImagePickerController.isSourceTypeAvailable(.camera))
 
             Button {
                 isContentFocused = false
@@ -300,9 +308,10 @@ struct CaptureView: View {
                     systemName: speechCapture.isRecording ? "stop.fill" : "mic.fill",
                     label: speechCapture.isRecording ? "Stop" : "Dictate",
                     foreground: .understoodCrimson,
-                    iconSize: 34
+                    iconSize: 42
                 )
-                .scaleEffect(speechCapture.isRecording ? 1.08 : 1)
+                .frame(width: 128)
+                .scaleEffect(speechCapture.isRecording ? 1.1 : 1)
                 .opacity(speechCapture.isRecording ? 0.72 : 1)
                 .animation(
                     speechCapture.isRecording
@@ -311,27 +320,6 @@ struct CaptureView: View {
                     value: speechCapture.isRecording
                 )
             }
-            .buttonStyle(.plain)
-
-            Button {
-                Task { await saveEntry() }
-            } label: {
-                if isSaving {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(.textPrimary)
-                        .frame(width: 72, height: 58)
-                } else {
-                    bottomIcon(
-                        systemName: saveFeedbackVisible ? "checkmark.circle.fill" : "tray.and.arrow.down.fill",
-                        label: saveFeedbackVisible ? "Saved" : "Save",
-                        foreground: .textPrimary,
-                        iconSize: 24
-                    )
-                    .contentTransition(.symbolEffect(.replace))
-                }
-            }
-            .disabled(!canSave)
             .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity)
@@ -342,6 +330,43 @@ struct CaptureView: View {
         .overlay(alignment: .top) {
             Divider()
         }
+    }
+
+    private var saveRowButton: some View {
+        Button {
+            Task { await saveEntry() }
+        } label: {
+            HStack(spacing: 6) {
+                if isSaving || isAutosaving {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                        .scaleEffect(0.72)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: saveRowIcon)
+                        .font(.system(size: 14, weight: .bold))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+
+                Text(saveRowLabel)
+                    .font(Typography.chipLabel)
+                    .fontWeight(.bold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+            .foregroundStyle(.white)
+            .frame(width: 118, height: 38)
+            .background(saveRowBackground)
+            .clipShape(Capsule())
+            .animation(.easeInOut(duration: 0.18), value: isAutosaving)
+            .animation(.easeInOut(duration: 0.18), value: saveFeedbackVisible)
+            .animation(.easeInOut(duration: 0.18), value: savedEntry?.id)
+        }
+        .disabled(!canSave)
+        .buttonStyle(.plain)
+        .opacity(canSave || isAutosaving || savedEntry != nil ? 1 : 0.42)
+        .accessibilityLabel(saveRowLabel)
     }
 
     private func bottomIcon(systemName: String, label: String, foreground: Color, iconSize: CGFloat) -> some View {
@@ -365,10 +390,25 @@ struct CaptureView: View {
         }
     }
 
-    private var captureSaveStatusText: String {
-        if isAutosaving { return "Saving..." }
-        if savedEntry != nil { return "Saved" }
-        return "Draft saved"
+    private var saveRowLabel: String {
+        if isSaving { return "Saving" }
+        if isAutosaving { return "Auto saving" }
+        if saveFeedbackVisible || (savedEntry != nil && !hasPendingSaveChanges) { return "Saved" }
+        return "Save"
+    }
+
+    private var saveRowIcon: String {
+        if saveFeedbackVisible || (savedEntry != nil && !hasPendingSaveChanges) { return "checkmark" }
+        return "tray.and.arrow.down.fill"
+    }
+
+    private var saveRowBackground: Color {
+        if isAutosaving || saveFeedbackVisible || (savedEntry != nil && !hasPendingSaveChanges) { return .actionGreen }
+        return .textPrimary
+    }
+
+    private var hasPendingSaveChanges: Bool {
+        content != lastAutosavedContent || selectedCategory != lastAutosavedCategory
     }
 
     private var placeholderText: String {
@@ -480,6 +520,15 @@ struct CaptureView: View {
         await MainActor.run {
             dismiss()
         }
+    }
+
+    private func returnHomeFromCapture() {
+        autosaveTask?.cancel()
+        speechCapture.stopTranscription()
+        persistLocalDraft()
+        isContentFocused = false
+        nav.returnHome()
+        dismiss()
     }
 
     private func scheduleAutosave() {
@@ -652,13 +701,16 @@ private struct CaptureLocalDraft: Codable {
 @MainActor
 final class SpeechCaptureController: ObservableObject {
     @Published private(set) var isRecording = false
+    @Published private(set) var hasTranscript = false
     @Published var errorMessage: String?
 
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine = AVAudioEngine()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var baseText = ""
+    private var lastSpokenText = ""
+    private var isStopping = false
 
     func toggleTranscription(currentText: String, onTranscript: @escaping (String) -> Void) async {
         if isRecording {
@@ -670,7 +722,11 @@ final class SpeechCaptureController: ObservableObject {
     }
 
     private func startTranscription(currentText: String, onTranscript: @escaping (String) -> Void) async {
+        resetRecognitionSession(deactivateAudioSession: false)
         errorMessage = nil
+        hasTranscript = false
+        lastSpokenText = ""
+        isStopping = false
 
         guard await requestSpeechAuthorization(), await requestMicrophoneAuthorization() else {
             errorMessage = "Microphone or speech recognition permission is needed to dictate."
@@ -682,22 +738,25 @@ final class SpeechCaptureController: ObservableObject {
             return
         }
 
-        recognitionTask?.cancel()
-        recognitionTask = nil
-
         let audioSession = AVAudioSession.sharedInstance()
 
         do {
-            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
+            request.requiresOnDeviceRecognition = false
             recognitionRequest = request
             baseText = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
 
+            audioEngine = AVAudioEngine()
             let inputNode = audioEngine.inputNode
             let recordingFormat = inputNode.outputFormat(forBus: 0)
+            guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+                throw SpeechCaptureError.invalidAudioInput
+            }
+
             inputNode.removeTap(onBus: 0)
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
                 self?.recognitionRequest?.append(buffer)
@@ -713,6 +772,8 @@ final class SpeechCaptureController: ObservableObject {
 
                     if let result {
                         let spokenText = result.bestTranscription.formattedString
+                        self.lastSpokenText = spokenText
+                        self.hasTranscript = !spokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         onTranscript(self.mergedTranscript(spokenText))
 
                         if result.isFinal {
@@ -720,7 +781,10 @@ final class SpeechCaptureController: ObservableObject {
                         }
                     }
 
-                    if error != nil {
+                    if error != nil, !self.isStopping {
+                        if self.lastSpokenText.isEmpty {
+                            self.errorMessage = "Dictation stopped before any words came through. Try once more in a quieter moment."
+                        }
                         self.stopTranscription()
                     }
                 }
@@ -738,11 +802,16 @@ final class SpeechCaptureController: ObservableObject {
     }
 
     func stopTranscription() {
+        isStopping = true
+        resetRecognitionSession(deactivateAudioSession: true)
+    }
+
+    private func resetRecognitionSession(deactivateAudioSession: Bool) {
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
 
+        audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
         recognitionRequest = nil
         recognitionTask?.cancel()
@@ -750,7 +819,9 @@ final class SpeechCaptureController: ObservableObject {
 
         isRecording = false
 
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if deactivateAudioSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     private func requestSpeechAuthorization() async -> Bool {
@@ -770,6 +841,15 @@ final class SpeechCaptureController: ObservableObject {
     }
 }
 
+private enum SpeechCaptureError: LocalizedError {
+    case invalidAudioInput
+
+    var errorDescription: String? {
+        "The microphone was not ready. Try dictation again."
+    }
+}
+
 #Preview {
     CaptureView()
+        .environment(AppNavigationState())
 }

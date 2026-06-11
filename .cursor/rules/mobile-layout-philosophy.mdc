@@ -1,0 +1,13 @@
+---
+description: Mobile layout philosophy — scrolling is effortless on iOS, so hero sections should fill the full viewport. Don't cram content above the fold.
+alwaysApply: true
+---
+
+# Mobile Layout Philosophy
+
+Scrolling down a page in iOS mobile apps is effortless. Users will scroll. Design accordingly:
+
+- **Hero dominates the first screen.** On Stories, the black editorial hero + overlay nav own most of the viewport. A **small peek** of the next section (e.g. `LATEST STORIES` header) at the bottom is OK — see measured spec in `docs/EDITORIAL_LAYOUT_STORIES.md`. Belief carousel and full lists stay **below** that peek; do not stack extra bands between hero and the first light section.
+- **Less information per screen, more breathing room.** Match web spacing with **named constants and screenshot measurement**, not adjectives — use `docs/scripts/measure_hero_cutoff.py` and `StoriesLandingMetrics` in `ContentView.swift`.
+- **Measurable acceptance.** Before calling a build “matched,” compare hero cutoff ratio to reference (~0.634 ± 0.02). See `docs/EDITORIAL_LAYOUT_STORIES.md`.
+- **Space differently than web.** Mobile has less width but infinite scroll depth. Use generous vertical spacing, larger touch targets, and full-bleed imagery. Don't port desktop density to mobile.

@@ -97,6 +97,18 @@ struct Entry: Codable, Identifiable, Hashable {
         posterImageUrl != nil
     }
 
+    /// Adam Pattern step stored in entry metadata (iOS primary classifier)
+    var patternStep: String? {
+        metadata?.patternStep
+    }
+
+    /// Label for cards and hero — pattern step only; life areas are sunset on iOS
+    var patternDisplayLabel: String? {
+        guard let step = patternStep?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !step.isEmpty else { return nil }
+        return step.uppercased()
+    }
+
     // MARK: - Entry Type Helpers
 
     var isPinned: Bool { pinnedAt != nil }
@@ -205,7 +217,8 @@ struct EntryMetadata: Codable, Hashable {
     var timeOfDay: String?
     var device: String?
     var location: LocationData?
-    
+    var patternStep: String?
+
     enum CodingKeys: String, CodingKey {
         case activity
         case energy
@@ -216,6 +229,7 @@ struct EntryMetadata: Codable, Hashable {
         case timeOfDay = "time_of_day"
         case device
         case location
+        case patternStep = "pattern_step"
     }
 }
 

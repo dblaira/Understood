@@ -53,10 +53,12 @@ struct EntryDetailView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text(entry.category.uppercased())
-                            .font(Typography.sectionHeader)
-                            .tracking(1.5)
-                            .foregroundStyle(.understoodCrimson)
+                        if let label = entry.patternDisplayLabel {
+                            Text(label)
+                                .font(Typography.sectionHeader)
+                                .tracking(1.5)
+                                .foregroundStyle(.understoodCrimson)
+                        }
 
                         Spacer()
 
@@ -353,7 +355,7 @@ struct EntryEditorView: View {
     @State private var headline: String
     @State private var subheading: String
     @State private var content: String
-    @State private var selectedCategory: String
+    @State private var selectedPatternStep: String?
     @State private var selectedEntryType: String
     @State private var hasDueDate: Bool
     @State private var dueDate: Date
@@ -367,7 +369,6 @@ struct EntryEditorView: View {
     @State private var errorMessage: String?
 
     private let supabase = SupabaseService.shared
-    private let categories = ["Business", "Finance", "Health", "Spiritual", "Fun", "Social", "Romance"]
     private let entryTypes: [(id: String, label: String)] = [
         ("story", "Story"),
         ("connection", "Connection")
@@ -379,7 +380,7 @@ struct EntryEditorView: View {
         _headline = State(initialValue: entry.headline)
         _subheading = State(initialValue: entry.subheading ?? "")
         _content = State(initialValue: entry.content)
-        _selectedCategory = State(initialValue: entry.category)
+        _selectedPatternStep = State(initialValue: entry.patternStep)
         _selectedEntryType = State(initialValue: entry.entryType == "connection" ? "connection" : "story")
         _hasDueDate = State(initialValue: entry.parsedDueDate != nil)
         _dueDate = State(initialValue: entry.parsedDueDate ?? Date())
@@ -527,7 +528,7 @@ struct EntryEditorView: View {
                                 .disabled(remainingSlots == 0)
 
                                 Button {
-                                    showCamera = true
+                                    Task { await openCamera() }
                                 } label: {
                                     Image(systemName: "camera.fill")
                                         .font(.system(size: 18, weight: .semibold))
@@ -537,7 +538,7 @@ struct EntryEditorView: View {
                                         .cornerRadius(8)
                                 }
                                 .buttonStyle(.plain)
-                                .disabled(remainingSlots == 0 || !UIImagePickerController.isSourceTypeAvailable(.camera))
+                                .disabled(remainingSlots == 0 || !CameraAccess.isAvailable)
                             }
 
                             if !selectedImages.isEmpty {
@@ -572,29 +573,48 @@ struct EntryEditorView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("CATEGORY")
+                        Text("PATTERN")
                             .font(Typography.sectionHeader)
                             .tracking(1.5)
                             .foregroundStyle(.textMuted)
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(categories, id: \.self) { category in
-                                    Button {
-                                        selectedCategory = category
-                                        Haptics.selection()
-                                    } label: {
-                                        Text(category)
-                                            .font(Typography.uiMedium)
-                                            .foregroundStyle(selectedCategory == category ? .white : .textPrimary)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                            .background(selectedCategory == category ? Color.black : Color.surfaceSubtle)
-                                            .cornerRadius(8)
-                                    }
-                                    .buttonStyle(.plain)
+                        Menu {
+                            Button {
+                                selectedPatternStep = nil
+                                Haptics.selection()
+                            } label: {
+                                if selectedPatternStep == nil {
+                                    Label("None", systemImage: "checkmark")
+                                } else {
+                                    Text("None")
                                 }
                             }
+
+                            ForEach(AdamPattern.steps, id: \.self) { step in
+                                Button {
+                                    selectedPatternStep = step
+                                    Haptics.selection()
+                                } label: {
+                                    if selectedPatternStep == step {
+                                        Label(step, systemImage: "checkmark")
+                                    } else {
+                                        Text(step)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "list.number")
+                                Text(selectedPatternStep ?? "None")
+                                    .font(Typography.uiMedium)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundStyle(.understoodCrimson)
+                            .padding(14)
+                            .background(Color.surfaceSubtle)
+                            .cornerRadius(8)
                         }
                     }
                 }
@@ -642,7 +662,7 @@ struct EntryEditorView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .fullScreenCover(isPresented: $showCamera) {
+            .sheet(isPresented: $showCamera) {
                 CameraImagePicker { image in
                     guard let image, remainingSlots > 0 else { return }
                     selectedImages.append(image)
@@ -651,6 +671,17 @@ struct EntryEditorView: View {
                 }
                 .ignoresSafeArea()
             }
+        }
+    }
+
+    private func openCamera() async {
+        guard remainingSlots > 0 else { return }
+
+        switch await CameraAccess.requestIfNeeded() {
+        case .success:
+            showCamera = true
+        case .failure(let message):
+            errorMessage = message
         }
     }
 
@@ -718,7 +749,7 @@ struct EntryEditorView: View {
                 headline: trimmedHeadline,
                 subheading: trimmedSubheading,
                 content: cleanedContent,
-                category: selectedCategory,
+                category: entry.category,
                 entryType: selectedEntryType,
                 dueDate: dueDateValue,
                 completedAt: completedAtValue,
@@ -727,6 +758,10 @@ struct EntryEditorView: View {
                 shouldClearCompletedAt: entry.completedAt != nil || !isEditingAction
             )
             try await supabase.updateEntry(id: entry.id, payload: payload)
+
+            var metadata = entry.metadata ?? EntryMetadata()
+            metadata.patternStep = selectedPatternStep
+            try await supabase.updateEntryMetadata(id: entry.id, metadata: metadata)
             print("EntryEditorView: updated text fields for entry \(entry.id)")
             try await supabase.updateEntryImages(entryId: entry.id, images: updatedImages)
             print("EntryEditorView: saved \(updatedImages.count) image(s) for entry \(entry.id)")
@@ -735,7 +770,8 @@ struct EntryEditorView: View {
             updatedEntry.headline = trimmedHeadline
             updatedEntry.subheading = trimmedSubheading
             updatedEntry.content = cleanedContent
-            updatedEntry.category = selectedCategory
+            updatedEntry.category = entry.category
+            updatedEntry.metadata = metadata
             updatedEntry.entryType = selectedEntryType
             updatedEntry.dueDate = dueDateValue
             updatedEntry.completedAt = completedAtValue

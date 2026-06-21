@@ -4,6 +4,8 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Understood uses the camera to attach photos to entries and notes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Understood uses your photo library to attach images to entries.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Understood uses the microphone to turn dictated thoughts into entry text.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

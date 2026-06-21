@@ -17,7 +17,7 @@ class AppNavigationState {
     /// Legacy "note" and "action" routes remain in code, but are no longer user-facing.
     var currentSection: String = "story"
 
-    /// Life area filter: "all", "business", "finance", "health", "fitness", "spiritual", "fun", "social", "romance"
+    /// Pattern step filter: "all" or lowercased Adam Pattern step name
     var currentFilter: String = "all"
 
     /// Overlay states
@@ -25,11 +25,8 @@ class AppNavigationState {
     var showCapture: Bool = false
     var showSettings: Bool = false
 
-    /// All available life areas
-    static let lifeAreas = [
-        "all", "business", "finance", "health",
-        "fitness", "spiritual", "fun", "social", "romance"
-    ]
+    /// Adam Pattern filter options (replaces life areas)
+    static let patternFilters = AdamPattern.filterOptions
 
     /// Primary sections shown in the app navigation.
     static let sections: [(id: String, label: String, icon: String)] = [
@@ -56,7 +53,7 @@ class AppNavigationState {
         showCapture = false
     }
 
-    /// Set filter and dismiss the menu
+    /// Set pattern filter and dismiss the menu
     func setFilter(_ filter: String) {
         currentFilter = filter
     }

@@ -13,8 +13,8 @@ struct BeliefLibraryView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
 
-    /// Life area filter passed from navigation state
-    var lifeAreaFilter: String = "all"
+    /// Pattern step filter passed from navigation state
+    var patternFilter: String = "all"
 
     /// The four belief types from the scoring engine
     private let beliefTypes = [
@@ -24,10 +24,10 @@ struct BeliefLibraryView: View {
         ("process_anchor", "Process Anchors", "list.bullet.rectangle.fill")
     ]
 
-    /// Filtered beliefs based on life area
+    /// Filtered beliefs based on Adam Pattern step
     private var filteredBeliefs: [Entry] {
-        guard lifeAreaFilter != "all" else { return beliefs }
-        return beliefs.filter { $0.category.lowercased() == lifeAreaFilter.lowercased() }
+        guard patternFilter != "all" else { return beliefs }
+        return beliefs.filter { AdamPattern.matchesFilter(patternFilter, patternStep: $0.patternStep) }
     }
 
     var body: some View {
@@ -278,6 +278,6 @@ struct BeliefCard: View {
 
 #Preview {
     NavigationStack {
-        BeliefLibraryView(lifeAreaFilter: "all")
+        BeliefLibraryView(patternFilter: "all")
     }
 }

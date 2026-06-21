@@ -55,26 +55,26 @@ struct FullScreenMenuView: View {
                     }
                     .padding(.horizontal, 24)
 
-                    // MARK: - Life Areas
+                    // MARK: - Adam Pattern Filters
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("LIFE AREAS")
+                        Text("THE ADAM PATTERN")
                             .font(Typography.sectionHeader)
                             .tracking(2)
                             .foregroundStyle(.white.opacity(0.4))
 
                         FlowLayout(spacing: 10) {
-                            ForEach(AppNavigationState.lifeAreas, id: \.self) { area in
+                            ForEach(AppNavigationState.patternFilters, id: \.id) { option in
                                 Button {
                                     Haptics.selection()
-                                    nav.setFilter(area)
+                                    nav.setFilter(option.id)
                                 } label: {
-                                    Text(area == "all" ? "All" : area.capitalized)
+                                    Text(option.label)
                                         .font(Typography.uiMedium)
-                                        .foregroundStyle(nav.currentFilter == area ? .black : .white.opacity(0.7))
+                                        .foregroundStyle(nav.currentFilter == option.id ? .black : .white.opacity(0.7))
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 8)
                                         .background(
-                                            nav.currentFilter == area
+                                            nav.currentFilter == option.id
                                                 ? Color.white
                                                 : Color.white.opacity(0.08)
                                         )

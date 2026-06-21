@@ -23,9 +23,9 @@ struct MainTabView: View {
                     // Route to active section
                     switch nav.currentSection {
                     case "story":
-                        ContentView(lifeAreaFilter: nav.currentFilter)
+                        ContentView(patternFilter: nav.currentFilter)
                     case "connection":
-                        BeliefLibraryView(lifeAreaFilter: nav.currentFilter)
+                        BeliefLibraryView(patternFilter: nav.currentFilter)
                     case "extraction":
                         ExtractionsView()
                     case "timeline":
@@ -41,9 +41,9 @@ struct MainTabView: View {
                             subtitle: "Coming soon — category-styled note cards"
                         )
                     case "action":
-                        ActionsView(lifeAreaFilter: nav.currentFilter)
+                        ActionsView(patternFilter: nav.currentFilter)
                     default:
-                        ContentView(lifeAreaFilter: nav.currentFilter)
+                        ContentView(patternFilter: nav.currentFilter)
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)

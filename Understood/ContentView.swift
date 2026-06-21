@@ -33,25 +33,26 @@ struct ContentView: View {
     @State private var featuredEntry: Entry?
     @State private var pinnedEntries: [Entry] = []
 
-    var lifeAreaFilter: String = "all"
+    var patternFilter: String = "all"
 
     private var stories: [Entry] {
         let filtered = entries.filter { $0.isStory }
-        guard lifeAreaFilter != "all" else { return filtered }
-        return filtered.filter { $0.category.lowercased() == lifeAreaFilter.lowercased() }
+        guard patternFilter != "all" else { return filtered }
+        return filtered.filter { AdamPattern.matchesFilter(patternFilter, patternStep: $0.patternStep) }
     }
 
     private var heroStory: Entry? {
         featuredEntry ?? stories.first
     }
 
-    private var carouselStories: [Entry] {
-        Array(stories.prefix(10))
+    /// Image entries only — no empty placeholder boxes in the carousel
+    private var momentStories: [Entry] {
+        Array(stories.filter(\.hasImages).prefix(10))
     }
 
     private var remainingStories: [Entry] {
-        let carouselIDs = Set(carouselStories.map(\.id))
-        return Array(stories.filter { !carouselIDs.contains($0.id) }.prefix(20))
+        let momentIDs = Set(momentStories.map(\.id))
+        return Array(stories.filter { !momentIDs.contains($0.id) }.prefix(20))
     }
 
     private var pinnedStories: [Entry] {
@@ -107,15 +108,15 @@ struct ContentView: View {
 
                         // MARK: - Light Zone
                         VStack(spacing: 0) {
-                            // Story Carousel (first light content — matches IMG_1177 hero + LATEST STORIES peek)
-                            if !carouselStories.isEmpty {
+                            // Moments strip — image entries only; hidden when none exist
+                            if !momentStories.isEmpty {
                                 VStack(alignment: .leading, spacing: 12) {
-                                    SectionHeaderView(title: "LATEST STORIES")
+                                    SectionHeaderView(title: "MOMENTS")
                                         .padding(.horizontal, 20)
 
                                     ScrollView(.horizontal, showsIndicators: false) {
                                         HStack(spacing: 16) {
-                                            ForEach(carouselStories) { entry in
+                                            ForEach(momentStories) { entry in
                                                 NavigationLink(destination: EntryDetailView(
                                                     entry: entry,
                                                     onDeleted: { Task { await loadEntries() } },
@@ -160,7 +161,7 @@ struct ContentView: View {
                                     }
                                 }
 
-                                if lifeAreaFilter == "all" {
+                                if patternFilter == "all" {
                                     pinnedSection(title: "PINNED STORIES", entries: pinnedStories)
                                     pinnedSection(title: "PINNED NOTES", entries: pinnedNotes)
                                     pinnedSection(title: "PINNED ACTIONS", entries: pinnedActions)
@@ -252,11 +253,13 @@ struct HeroStoryView: View {
             + StoriesLandingMetrics.heroContentOffsetBelowSafeArea
 
         VStack(alignment: .leading, spacing: 10) {
-            Text(entry.category.uppercased())
-                .font(Typography.categoryLabel)
-                .tracking(1.5)
-                .foregroundStyle(.understoodCrimson)
-                .layoutPriority(1)
+            if let label = entry.patternDisplayLabel {
+                Text(label)
+                    .font(Typography.categoryLabel)
+                    .tracking(1.5)
+                    .foregroundStyle(.understoodCrimson)
+                    .layoutPriority(1)
+            }
 
             Text(entry.displayHeadline)
                 .font(.custom("PlayfairDisplay-Regular", size: 40))
@@ -304,52 +307,50 @@ struct StoryCarouselCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomTrailing) {
-                if let poster = entry.posterWithFocalPoint {
+            if let poster = entry.posterWithFocalPoint {
+                ZStack(alignment: .bottomTrailing) {
                     AsyncImage(url: URL(string: poster.url)) { phase in
                         switch phase {
                         case .success(let image):
                             image
                                 .resizable()
                                 .scaledToFill()
-                        case .failure:
-                            imageFallback(systemName: "photo")
-                        case .empty:
-                            imageFallback(systemName: "photo")
+                        case .failure, .empty:
+                            Color.surfaceSubtle
                                 .overlay(ProgressView())
                         @unknown default:
-                            imageFallback(systemName: "photo")
+                            Color.surfaceSubtle
                         }
                     }
                     .id(poster.url)
-                } else {
-                    imageFallback(systemName: "book.pages")
-                }
+                    .frame(width: 200, height: 160)
+                    .clipped()
+                    .cornerRadius(8)
 
-                let imageCount = entry.allImages.count
-                if imageCount > 1 {
-                    HStack(spacing: 3) {
-                        Image(systemName: "photo.on.rectangle")
-                            .font(.system(size: 10))
-                        Text("\(imageCount)")
-                            .font(Typography.chipLabel)
+                    let imageCount = entry.allImages.count
+                    if imageCount > 1 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "photo.on.rectangle")
+                                .font(.system(size: 10))
+                            Text("\(imageCount)")
+                                .font(Typography.chipLabel)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(6)
+                        .padding(8)
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(6)
-                    .padding(8)
                 }
             }
-            .frame(width: 200, height: 160)
-            .clipped()
-            .cornerRadius(8)
 
-            Text(entry.category.uppercased())
-                .font(Typography.categoryLabel)
-                .tracking(1.5)
-                .foregroundStyle(.understoodCrimson)
+            if let label = entry.patternDisplayLabel {
+                Text(label)
+                    .font(Typography.categoryLabel)
+                    .tracking(1.5)
+                    .foregroundStyle(.understoodCrimson)
+            }
 
             Text(entry.displayHeadline)
                 .font(Typography.cardHeadline)
@@ -362,16 +363,6 @@ struct StoryCarouselCard: View {
                 .foregroundStyle(.textMetadata)
         }
         .frame(width: 200)
-    }
-
-    private func imageFallback(systemName: String) -> some View {
-        Rectangle()
-            .fill(Color.surfaceSubtle)
-            .overlay {
-                Image(systemName: systemName)
-                    .font(.system(size: 24))
-                    .foregroundStyle(.textMuted)
-            }
     }
 }
 
@@ -393,9 +384,11 @@ struct PinnedEntryRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
-                    Text(entry.category.uppercased())
-                        .font(Typography.chipLabel)
-                        .foregroundStyle(.understoodCrimson)
+                    if let label = entry.patternDisplayLabel {
+                        Text(label)
+                            .font(Typography.chipLabel)
+                            .foregroundStyle(.understoodCrimson)
+                    }
 
                     if let type = entry.entryType, type != "story" {
                         Text(type.capitalized)
@@ -570,10 +563,12 @@ struct ImageEntryRow: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Text(entry.category.uppercased())
-                        .font(Typography.categoryLabel)
-                        .tracking(1.5)
-                        .foregroundStyle(.understoodCrimson)
+                    if let label = entry.patternDisplayLabel {
+                        Text(label)
+                            .font(Typography.categoryLabel)
+                            .tracking(1.5)
+                            .foregroundStyle(.understoodCrimson)
+                    }
 
                     if entry.isPinned {
                         Image(systemName: "pin.fill")
@@ -614,10 +609,12 @@ struct TextEntryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Text(entry.category.uppercased())
-                    .font(Typography.categoryLabel)
-                    .tracking(1.5)
-                    .foregroundStyle(.understoodCrimson)
+                if let label = entry.patternDisplayLabel {
+                    Text(label)
+                        .font(Typography.categoryLabel)
+                        .tracking(1.5)
+                        .foregroundStyle(.understoodCrimson)
+                }
 
                 if entry.isPinned {
                     Image(systemName: "pin.fill")
@@ -686,7 +683,7 @@ enum EntryDateFormatter {
 
 #Preview {
     NavigationStack {
-        ContentView(lifeAreaFilter: "all")
+        ContentView(patternFilter: "all")
             .environment(AppNavigationState())
     }
 }

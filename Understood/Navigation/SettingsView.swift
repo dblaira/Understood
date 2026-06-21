@@ -37,7 +37,7 @@ struct SettingsView: View {
                         settingsRow(
                             icon: "square.and.pencil",
                             title: "Editing",
-                            subtitle: "Open any entry to revise the title, body, life area, and images."
+                            subtitle: "Open any entry to revise the title, body, pattern step, and images."
                         )
                     }
 

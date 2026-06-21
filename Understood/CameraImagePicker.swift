@@ -5,8 +5,33 @@
 //  Native camera bridge for SwiftUI capture and entry editing flows.
 //
 
+import AVFoundation
 import SwiftUI
 import UIKit
+
+enum CameraAccess {
+    static func requestIfNeeded() async -> Result<Void, String> {
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+
+        switch status {
+        case .authorized:
+            return .success(())
+        case .notDetermined:
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            return granted
+                ? .success(())
+                : .failure("Camera access is needed to attach photos. Enable it in Settings → Understood.")
+        case .denied, .restricted:
+            return .failure("Camera access is off. Enable it in Settings → Understood → Camera.")
+        @unknown default:
+            return .failure("Camera is not available right now.")
+        }
+    }
+
+    static var isAvailable: Bool {
+        UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
+}
 
 struct CameraImagePicker: UIViewControllerRepresentable {
     let onComplete: (UIImage?) -> Void

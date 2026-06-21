@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ActionsView: View {
     let supabase = SupabaseService.shared
-    var lifeAreaFilter: String = "all"
+    var patternFilter: String = "all"
 
     @State private var allActions: [Entry] = []
     @State private var isLoading = true
@@ -20,8 +20,8 @@ struct ActionsView: View {
     // MARK: - Grouped Actions
 
     private var filteredActions: [Entry] {
-        guard lifeAreaFilter != "all" else { return allActions }
-        return allActions.filter { $0.category.lowercased() == lifeAreaFilter.lowercased() }
+        guard patternFilter != "all" else { return allActions }
+        return allActions.filter { AdamPattern.matchesFilter(patternFilter, patternStep: $0.patternStep) }
     }
 
     private var groupedActions: ActionGroups {
@@ -428,13 +428,15 @@ struct ActionCardView: View {
 
                     // Bottom row: category + due date
                     HStack(spacing: 8) {
-                        Text(entry.category.uppercased())
-                            .font(Typography.chipLabel)
-                            .foregroundStyle(.textMetadata)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.surfaceChip)
-                            .cornerRadius(4)
+                        if let label = entry.patternDisplayLabel {
+                            Text(label)
+                                .font(Typography.chipLabel)
+                                .foregroundStyle(.textMetadata)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.surfaceChip)
+                                .cornerRadius(4)
+                        }
 
                         DueDateLabel(entry: entry)
 
@@ -487,6 +489,6 @@ struct RoundedCornerShape: Shape {
 
 #Preview {
     NavigationStack {
-        ActionsView(lifeAreaFilter: "all")
+        ActionsView(patternFilter: "all")
     }
 }

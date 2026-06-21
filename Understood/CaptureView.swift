@@ -25,7 +25,7 @@ struct CaptureView: View {
 
     // Form state
     @State private var content = ""
-    @State private var selectedCategory = "Business"
+    @State private var selectedPatternStep: String? = nil
     @FocusState private var isContentFocused: Bool
 
     // Photo state
@@ -43,13 +43,14 @@ struct CaptureView: View {
     @State private var autosaveTask: Task<Void, Never>?
     @State private var isAutosaving = false
     @State private var lastAutosavedContent = ""
-    @State private var lastAutosavedCategory = ""
+    @State private var lastAutosavedPatternStep: String? = nil
     @State private var hasLocalDraft = false
     @State private var saveFeedbackVisible = false
 
-    let categories = ["Business", "Finance", "Health", "Spiritual", "Fun", "Social", "Romance"]
-
     var onSaved: (() -> Void)?
+
+    /// Silent backend category while life areas are sunset on iOS
+    private let defaultCategory = "Insight"
 
     private var trimmedContent: String {
         content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -72,28 +73,54 @@ struct CaptureView: View {
 
                 VStack(spacing: 0) {
 
-                    // MARK: - Category Selector
+                    // MARK: - Pattern Selector
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(categories, id: \.self) { category in
-                                Button {
-                                    selectedCategory = category
-                                    Haptics.selection()
-                                } label: {
-                                    Text(category)
-                                        .font(Typography.uiMedium)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 8)
-                                        .background(selectedCategory == category ? Color.black : Color.surfaceSubtle)
-                                        .foregroundStyle(selectedCategory == category ? Color.white : Color.textPrimary)
-                                        .cornerRadius(20)
+                    HStack {
+                        Menu {
+                            Button {
+                                selectedPatternStep = nil
+                                Haptics.selection()
+                            } label: {
+                                if selectedPatternStep == nil {
+                                    Label("None", systemImage: "checkmark")
+                                } else {
+                                    Text("None")
                                 }
                             }
+
+                            ForEach(AdamPattern.steps, id: \.self) { step in
+                                Button {
+                                    selectedPatternStep = step
+                                    Haptics.selection()
+                                } label: {
+                                    if selectedPatternStep == step {
+                                        Label(step, systemImage: "checkmark")
+                                    } else {
+                                        Text(step)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "list.number")
+                                    .font(.system(size: 15, weight: .semibold))
+                                Text(selectedPatternStep ?? "Pattern")
+                                    .font(Typography.uiMedium)
+                                    .fontWeight(.semibold)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundStyle(.understoodCrimson)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.surfaceSubtle)
+                            .cornerRadius(20)
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
+
+                        Spacer()
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
 
                     Divider()
                         .foregroundStyle(.borderLight)
@@ -246,22 +273,22 @@ struct CaptureView: View {
                 }
             }
             .onAppear {
-                if let prefillCategory {
-                    selectedCategory = prefillCategory
+                if let prefillCategory, AdamPattern.isValidStep(prefillCategory) {
+                    selectedPatternStep = prefillCategory
                 }
                 restoreLocalDraftIfNeeded()
             }
             .onChange(of: content) { _, _ in
                 scheduleAutosave()
             }
-            .onChange(of: selectedCategory) { _, _ in
+            .onChange(of: selectedPatternStep) { _, _ in
                 scheduleAutosave()
             }
             .onDisappear {
                 autosaveTask?.cancel()
                 speechCapture.stopTranscription()
             }
-            .fullScreenCover(isPresented: $showCamera) {
+            .sheet(isPresented: $showCamera) {
                 CameraImagePicker { image in
                     guard let image, remainingImageSlots > 0 else { return }
                     selectedImages.append(image)
@@ -287,13 +314,13 @@ struct CaptureView: View {
                 Spacer()
 
                 Button {
-                    showCamera = true
+                    Task { await openCamera() }
                 } label: {
                     bottomIcon(systemName: "camera.fill", label: "Camera", foreground: .textPrimary, iconSize: 27)
                         .frame(width: 112)
                 }
                 .buttonStyle(.plain)
-                .disabled(remainingImageSlots == 0 || !UIImagePickerController.isSourceTypeAvailable(.camera))
+                .disabled(remainingImageSlots == 0 || !CameraAccess.isAvailable)
             }
 
             Button {
@@ -408,7 +435,7 @@ struct CaptureView: View {
     }
 
     private var hasPendingSaveChanges: Bool {
-        content != lastAutosavedContent || selectedCategory != lastAutosavedCategory
+        content != lastAutosavedContent || selectedPatternStep != lastAutosavedPatternStep
     }
 
     private var placeholderText: String {
@@ -416,6 +443,17 @@ struct CaptureView: View {
         case "action": return "What do you want to do?"
         case "note": return "What are you noticing?"
         default: return "What happened? What are you thinking about?"
+        }
+    }
+
+    private func openCamera() async {
+        guard remainingImageSlots > 0 else { return }
+
+        switch await CameraAccess.requestIfNeeded() {
+        case .success:
+            showCamera = true
+        case .failure(let message):
+            photoLoadError = message
         }
     }
 
@@ -475,7 +513,7 @@ struct CaptureView: View {
             // 1. Save to Supabase (text only, get entry ID)
             let entry = try await supabase.createEntry(
                 content: content,
-                category: selectedCategory,
+                category: defaultCategory,
                 entryType: entryType,
                 sourceEntryId: sourceEntryId,
                 metadata: metadata
@@ -547,7 +585,7 @@ struct CaptureView: View {
 
     private func autoSaveEntry() async {
         guard !trimmedContent.isEmpty, !isSaving, !isAutosaving else { return }
-        guard content != lastAutosavedContent || selectedCategory != lastAutosavedCategory else { return }
+        guard content != lastAutosavedContent || selectedPatternStep != lastAutosavedPatternStep else { return }
 
         isAutosaving = true
         defer { isAutosaving = false }
@@ -558,7 +596,7 @@ struct CaptureView: View {
             } else {
                 let entry = try await supabase.createEntry(
                     content: content,
-                    category: selectedCategory,
+                    category: defaultCategory,
                     entryType: entryType,
                     sourceEntryId: sourceEntryId,
                     metadata: captureMetadata()
@@ -574,11 +612,11 @@ struct CaptureView: View {
     }
 
     private func updateAutosavedEntryIfNeeded(_ entryId: String) async throws {
-        guard content != lastAutosavedContent || selectedCategory != lastAutosavedCategory else { return }
+        guard content != lastAutosavedContent || selectedPatternStep != lastAutosavedPatternStep else { return }
 
+        try await supabase.updateEntryMetadata(id: entryId, metadata: captureMetadata())
         try await supabase.updateEntry(id: entryId, fields: [
-            "content": content,
-            "category": selectedCategory
+            "content": content
         ])
         markAutosaved()
         onSaved?()
@@ -586,7 +624,7 @@ struct CaptureView: View {
 
     private func markAutosaved() {
         lastAutosavedContent = content
-        lastAutosavedCategory = selectedCategory
+        lastAutosavedPatternStep = selectedPatternStep
         clearLocalDraft()
     }
 
@@ -601,7 +639,7 @@ struct CaptureView: View {
             return
         }
 
-        let draft = CaptureLocalDraft(content: content, category: selectedCategory)
+        let draft = CaptureLocalDraft(content: content, patternStep: selectedPatternStep)
         if let data = try? JSONEncoder().encode(draft) {
             UserDefaults.standard.set(data, forKey: localDraftKey)
             hasLocalDraft = true
@@ -616,7 +654,7 @@ struct CaptureView: View {
         }
 
         content = draft.content
-        selectedCategory = draft.category
+        selectedPatternStep = draft.patternStep
         hasLocalDraft = !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -645,7 +683,8 @@ struct CaptureView: View {
             timestamp: ISO8601DateFormatter().string(from: now),
             dayOfWeek: dayOfWeek,
             timeOfDay: timeOfDay,
-            device: "mobile"
+            device: "mobile",
+            patternStep: selectedPatternStep
         )
     }
 
@@ -695,7 +734,7 @@ struct CaptureView: View {
 
 private struct CaptureLocalDraft: Codable {
     let content: String
-    let category: String
+    let patternStep: String?
 }
 
 @MainActor

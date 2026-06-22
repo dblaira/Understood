@@ -22,8 +22,15 @@ class AppNavigationState {
 
     /// Overlay states
     var showMenu: Bool = false
-    var showCapture: Bool = false
+    var showCapture: Bool = false {
+        didSet {
+            if showCapture && !oldValue {
+                captureSessionID = UUID()
+            }
+        }
+    }
     var showSettings: Bool = false
+    var captureSessionID = UUID()
 
     /// Adam Pattern filter options (replaces life areas)
     static let patternFilters = AdamPattern.filterOptions

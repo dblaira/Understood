@@ -44,7 +44,7 @@ struct CaptureView: View {
     @State private var isAutosaving = false
     @State private var lastAutosavedContent = ""
     @State private var lastAutosavedPatternStep: String? = nil
-    @State private var hasLocalDraft = false
+    @State private var hasInitializedSession = false
     @State private var saveFeedbackVisible = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -286,10 +286,18 @@ struct CaptureView: View {
                 }
             }
             .onAppear {
+                guard !hasInitializedSession else { return }
+                hasInitializedSession = true
+
                 if let prefillCategory, AdamPattern.isValidStep(prefillCategory) {
                     selectedPatternStep = prefillCategory
                 }
-                restoreLocalDraftIfNeeded()
+
+                if sourceEntryId == nil {
+                    clearLocalDraft()
+                } else {
+                    restoreLocalDraftIfNeeded()
+                }
             }
             .onChange(of: content) { _, _ in
                 scheduleAutosave()
@@ -649,7 +657,7 @@ struct CaptureView: View {
 
         persistLocalDraft()
 
-        guard !trimmedContent.isEmpty, !isSaving, supabase.currentSession != nil else { return }
+        guard savedEntry != nil, !trimmedContent.isEmpty, !isSaving, supabase.currentSession != nil else { return }
 
         autosaveTask = Task {
             try? await Task.sleep(for: .seconds(2.0))
@@ -668,18 +676,6 @@ struct CaptureView: View {
         do {
             if let savedEntry {
                 try await updateAutosavedEntryIfNeeded(savedEntry.id)
-            } else {
-                let entry = try await supabase.createEntry(
-                    content: content,
-                    category: defaultCategory,
-                    entryType: entryType,
-                    sourceEntryId: sourceEntryId,
-                    metadata: captureMetadata()
-                )
-                savedEntry = entry
-                onSaved?()
-                Haptics.light()
-                markAutosaved()
             }
         } catch {
             print("Autosave error: \(error)")
@@ -709,6 +705,11 @@ struct CaptureView: View {
     }
 
     private func persistLocalDraft() {
+        guard sourceEntryId != nil else {
+            clearLocalDraft()
+            return
+        }
+
         guard !trimmedContent.isEmpty else {
             clearLocalDraft()
             return
@@ -717,7 +718,6 @@ struct CaptureView: View {
         let draft = CaptureLocalDraft(content: content, patternStep: selectedPatternStep)
         if let data = try? JSONEncoder().encode(draft) {
             UserDefaults.standard.set(data, forKey: localDraftKey)
-            hasLocalDraft = true
         }
     }
 
@@ -730,12 +730,10 @@ struct CaptureView: View {
 
         content = draft.content
         selectedPatternStep = draft.patternStep
-        hasLocalDraft = !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func clearLocalDraft() {
         UserDefaults.standard.removeObject(forKey: localDraftKey)
-        hasLocalDraft = false
     }
 
     private func captureMetadata() -> EntryMetadata {

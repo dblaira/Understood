@@ -78,11 +78,20 @@ class SupabaseService {
 
     // MARK: - Data Fetching
 
+    private func currentUserIdString() throws -> String {
+        guard let userId = currentSession?.user.id.uuidString else {
+            throw NSError(domain: "SupabaseService", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        return userId
+    }
+
     /// Fetch journal entries (stories) for the current user
     func fetchEntries(limit: Int = 20) async throws -> [Entry] {
+        let userId = try currentUserIdString()
         let entries: [Entry] = try await client
             .from("entries")
             .select()
+            .eq("user_id", value: userId)
             .eq("entry_type", value: "story")
             .order("created_at", ascending: false)
             .limit(limit)
@@ -93,10 +102,12 @@ class SupabaseService {
 
     /// Fetch a single entry by ID
     func fetchEntry(id: String) async throws -> Entry {
+        let userId = try currentUserIdString()
         let entry: Entry = try await client
             .from("entries")
             .select()
             .eq("id", value: id)
+            .eq("user_id", value: userId)
             .single()
             .execute()
             .value
@@ -105,9 +116,11 @@ class SupabaseService {
 
     /// Fetch beliefs (entries with entry_type = 'connection')
     func fetchBeliefs(limit: Int = 50) async throws -> [Entry] {
+        let userId = try currentUserIdString()
         let beliefs: [Entry] = try await client
             .from("entries")
             .select()
+            .eq("user_id", value: userId)
             .eq("entry_type", value: "connection")
             .order("created_at", ascending: false)
             .limit(limit)
@@ -118,9 +131,11 @@ class SupabaseService {
 
     /// Fetch entries connected to a specific belief via source_entry_id
     func fetchConnectedEntries(beliefId: String) async throws -> [Entry] {
+        let userId = try currentUserIdString()
         let entries: [Entry] = try await client
             .from("entries")
             .select()
+            .eq("user_id", value: userId)
             .eq("source_entry_id", value: beliefId)
             .order("created_at", ascending: false)
             .execute()
@@ -130,9 +145,11 @@ class SupabaseService {
 
     /// Fetch all entries regardless of type (used for actions, pinned, etc.)
     func fetchAllEntries(limit: Int = 200) async throws -> [Entry] {
+        let userId = try currentUserIdString()
         let entries: [Entry] = try await client
             .from("entries")
             .select()
+            .eq("user_id", value: userId)
             .order("created_at", ascending: false)
             .limit(limit)
             .execute()
@@ -142,9 +159,11 @@ class SupabaseService {
 
     /// Fetch the user's featured entry (for story hero)
     func fetchFeaturedEntry() async throws -> Entry? {
+        let userId = try currentUserIdString()
         let entries: [Entry] = try await client
             .from("entries")
             .select()
+            .eq("user_id", value: userId)
             .eq("featured", value: true)
             .limit(1)
             .execute()
@@ -154,9 +173,11 @@ class SupabaseService {
 
     /// Fetch all pinned entries (pinned_at is not null)
     func fetchPinnedEntries() async throws -> [Entry] {
+        let userId = try currentUserIdString()
         let entries: [Entry] = try await client
             .from("entries")
             .select()
+            .eq("user_id", value: userId)
             .order("created_at", ascending: false)
             .limit(200)
             .execute()
@@ -167,9 +188,11 @@ class SupabaseService {
 
     /// Fetch actions (entries with entry_type = 'action')
     func fetchActions(limit: Int = 200) async throws -> [Entry] {
+        let userId = try currentUserIdString()
         let entries: [Entry] = try await client
             .from("entries")
             .select()
+            .eq("user_id", value: userId)
             .eq("entry_type", value: "action")
             .order("created_at", ascending: false)
             .limit(limit)
@@ -182,15 +205,18 @@ class SupabaseService {
 
     /// Delete an entry by ID
     func deleteEntry(id: String) async throws {
+        let userId = try currentUserIdString()
         try await client
             .from("entries")
             .delete()
             .eq("id", value: id)
+            .eq("user_id", value: userId)
             .execute()
     }
 
     /// Toggle pinned state using pinned_at timestamp
     func togglePin(id: String, currentlyPinned: Bool) async throws {
+        let userId = try currentUserIdString()
         let payload = PinUpdatePayload(
             pinnedAt: currentlyPinned ? nil : ISO8601DateFormatter().string(from: Date()),
             pinned: !currentlyPinned,
@@ -200,6 +226,7 @@ class SupabaseService {
             .from("entries")
             .update(payload)
             .eq("id", value: id)
+            .eq("user_id", value: userId)
             .execute()
     }
 
@@ -207,6 +234,7 @@ class SupabaseService {
     /// unfeaturing the old one is handled server-side by RLS/trigger, but
     /// we clear all other featured flags client-side as a safety measure.
     func toggleFeatured(entryId: String, currentlyFeatured: Bool) async throws {
+        let userId = try currentUserIdString()
         let payload = FeaturedUpdatePayload(
             featured: !currentlyFeatured,
             updatedAt: ISO8601DateFormatter().string(from: Date())
@@ -215,11 +243,13 @@ class SupabaseService {
             .from("entries")
             .update(payload)
             .eq("id", value: entryId)
+            .eq("user_id", value: userId)
             .execute()
     }
 
     /// Toggle action completion: sets or clears completed_at
     func toggleActionComplete(id: String, currentlyCompleted: Bool) async throws {
+        let userId = try currentUserIdString()
         let payload = CompletionUpdatePayload(
             completedAt: currentlyCompleted ? nil : ISO8601DateFormatter().string(from: Date()),
             updatedAt: ISO8601DateFormatter().string(from: Date())
@@ -228,6 +258,7 @@ class SupabaseService {
             .from("entries")
             .update(payload)
             .eq("id", value: id)
+            .eq("user_id", value: userId)
             .execute()
     }
 
@@ -344,29 +375,35 @@ class SupabaseService {
 
     /// Update an existing entry with inferred data
     func updateEntry(id: String, fields: [String: String]) async throws {
+        let userId = try currentUserIdString()
         try await client
             .from("entries")
             .update(fields)
             .eq("id", value: id)
+            .eq("user_id", value: userId)
             .execute()
     }
 
     /// Update the editable fields for an entry.
     func updateEntry(id: String, payload: EntryUpdatePayload) async throws {
+        let userId = try currentUserIdString()
         try await client
             .from("entries")
             .update(payload)
             .eq("id", value: id)
+            .eq("user_id", value: userId)
             .execute()
     }
 
     /// Update an existing entry's metadata
     func updateEntryMetadata(id: String, metadata: EntryMetadata) async throws {
+        let userId = try currentUserIdString()
         let wrapper = MetadataUpdatePayload(metadata: metadata)
         try await client
             .from("entries")
             .update(wrapper)
             .eq("id", value: id)
+            .eq("user_id", value: userId)
             .execute()
     }
 
@@ -415,6 +452,7 @@ class SupabaseService {
             .from("entries")
             .update(updatePayload)
             .eq("id", value: entry.id)
+            .eq("user_id", value: entry.userId)
             .execute()
     }
 
@@ -574,9 +612,11 @@ class SupabaseService {
 
     /// Update an entry's images array and legacy photo_url field
     func updateEntryImages(entryId: String, images: [EntryImage]) async throws {
+        let userId = try currentUserIdString()
+        let validImages = images.filter { Entry.isValidImageURL($0.url) }
         let payload = ImagesUpdatePayload(
-            images: images,
-            photoUrl: images.first?.url,
+            images: validImages,
+            photoUrl: validImages.first?.url,
             imageUrl: nil,
             updatedAt: ISO8601DateFormatter().string(from: Date())
         )
@@ -584,8 +624,9 @@ class SupabaseService {
             .from("entries")
             .update(payload)
             .eq("id", value: entryId)
+            .eq("user_id", value: userId)
             .execute()
-        print("SupabaseService: updated images for entry \(entryId) with \(images.count) image(s)")
+        print("SupabaseService: updated images for entry \(entryId) with \(validImages.count) image(s)")
     }
 }
 

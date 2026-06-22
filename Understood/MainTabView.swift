@@ -64,6 +64,7 @@ struct MainTabView: View {
             CaptureView(onSaved: {
                 // Views will refresh via their own .task modifiers
             })
+            .id(nav.captureSessionID)
             .environment(nav)
         }
         .sheet(isPresented: $nav.showSettings) {

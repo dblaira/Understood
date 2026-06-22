@@ -826,8 +826,8 @@ struct EntryEditorView: View {
                 throw NSError(domain: "EntryEditorView", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
             }
 
-            var updatedImages = normalizedImages(retainedImages)
-            let startingOrder = updatedImages.count
+            let validRetained = retainedImages.filter { Entry.isValidImageURL($0.url) }
+            var uploadedImages: [EntryImage] = []
 
             for (index, image) in selectedImages.enumerated() {
                 print("EntryEditorView: uploading image \(index + 1) of \(selectedImages.count) for entry \(entry.id)")
@@ -835,17 +835,18 @@ struct EntryEditorView: View {
                     image: image,
                     userId: userId,
                     entryId: entry.id,
-                    index: startingOrder + index
+                    index: validRetained.count + index
                 )
                 print("EntryEditorView: uploaded image \(index + 1) to \(url)")
-                updatedImages.append(EntryImage(
+                uploadedImages.append(EntryImage(
                     url: url,
-                    isPoster: updatedImages.isEmpty,
-                    order: startingOrder + index
+                    isPoster: false,
+                    order: index
                 ))
             }
 
-            updatedImages = normalizedImages(updatedImages)
+            // New uploads become the poster so edits to older entries refresh the carousel.
+            let updatedImages = normalizedImages(uploadedImages + validRetained)
             let updatedAt = ISO8601DateFormatter().string(from: Date())
             let trimmedHeadline = headline.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedSubheading = subheading.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1376,40 +1377,10 @@ struct ImageGalleryView: View {
         ZStack(alignment: .bottom) {
             TabView(selection: $currentPage) {
                 ForEach(Array(images.enumerated()), id: \.offset) { index, entryImage in
-                    AsyncImage(url: URL(string: entryImage.url)) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 280)
-                                .clipped()
-                        case .failure:
-                            ZStack {
-                                Color.surfaceSubtle
-                                VStack(spacing: 8) {
-                                    Image(systemName: "photo")
-                                        .font(.system(size: 32))
-                                        .foregroundStyle(.textMuted)
-                                    Text("Failed to load")
-                                        .font(Typography.small)
-                                        .foregroundStyle(.textMuted)
-                                }
-                            }
-                            .frame(height: 280)
-                        case .empty:
-                            ZStack {
-                                Color.surfaceSubtle
-                                ProgressView()
-                                    .scaleEffect(1.2)
-                            }
-                            .frame(height: 280)
-                        @unknown default:
-                            Color.surfaceSubtle
-                                .frame(height: 280)
-                        }
-                    }
-                    .tag(index)
+                    EntryPosterImage(urlString: entryImage.url)
+                        .frame(height: 280)
+                        .clipped()
+                        .tag(index)
                 }
             }
             .frame(height: 280)

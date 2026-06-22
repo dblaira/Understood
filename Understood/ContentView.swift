@@ -47,12 +47,16 @@ struct ContentView: View {
 
     /// Image entries only — no empty placeholder boxes in the carousel
     private var momentStories: [Entry] {
-        Array(stories.filter(\.hasImages).prefix(10))
+        let heroID = heroStory?.id
+        return Array(stories.filter { $0.hasImages && $0.id != heroID }.prefix(10))
     }
 
     private var remainingStories: [Entry] {
-        let momentIDs = Set(momentStories.map(\.id))
-        return Array(stories.filter { !momentIDs.contains($0.id) }.prefix(20))
+        var excludedIDs = Set(momentStories.map(\.id))
+        if let heroID = heroStory?.id {
+            excludedIDs.insert(heroID)
+        }
+        return Array(stories.filter { !excludedIDs.contains($0.id) }.prefix(20))
     }
 
     private var pinnedStories: [Entry] {
@@ -123,6 +127,7 @@ struct ContentView: View {
                                                     onFeaturedChanged: { Task { await loadEntries() } }
                                                 )) {
                                                     StoryCarouselCard(entry: entry)
+                                                        .id("\(entry.id)-\(entry.posterImageUrl ?? "none")")
                                                 }
                                                 .buttonStyle(.plain)
                                             }
@@ -302,29 +307,26 @@ struct HeroStoryView: View {
 struct StoryCarouselCard: View {
     let entry: Entry
 
+    private var imageURLs: [String] {
+        posterFirstImages.map(\.url)
+    }
+
+    private var posterFirstImages: [EntryImage] {
+        let images = entry.displayableImages
+        guard let poster = images.first(where: { $0.isPoster }) else { return images }
+        return [poster] + images.filter { $0.url != poster.url }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let poster = entry.posterWithFocalPoint {
                 ZStack(alignment: .bottomTrailing) {
-                    AsyncImage(url: URL(string: poster.url)) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .failure, .empty:
-                            Color.surfaceSubtle
-                                .overlay(ProgressView())
-                        @unknown default:
-                            Color.surfaceSubtle
-                        }
-                    }
-                    .id(poster.url)
-                    .frame(width: 200, height: 160)
-                    .clipped()
-                    .cornerRadius(8)
+                    EntryPosterImage(urlStrings: imageURLs.isEmpty ? [poster.url] : imageURLs)
+                        .frame(width: 200, height: 160)
+                        .clipped()
+                        .cornerRadius(8)
 
-                    let imageCount = entry.allImages.count
+                    let imageCount = entry.displayableImages.count
                     if imageCount > 1 {
                         HStack(spacing: 3) {
                             Image(systemName: "photo.on.rectangle")
@@ -508,40 +510,24 @@ struct ImageEntryRow: View {
     let entry: Entry
     let posterUrl: String
 
+    private var imageURLs: [String] {
+        let images = entry.displayableImages
+        guard let poster = images.first(where: { $0.url == posterUrl }) else {
+            return [posterUrl] + images.map(\.url)
+        }
+        return [poster.url] + images.filter { $0.url != poster.url }.map(\.url)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .bottomTrailing) {
-                AsyncImage(url: URL(string: posterUrl)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(height: 200)
-                            .clipped()
-                    case .failure:
-                        Rectangle()
-                            .fill(Color.surfaceSubtle)
-                            .frame(height: 200)
-                            .overlay {
-                                Image(systemName: "photo")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(.textMuted)
-                            }
-                    case .empty:
-                        Rectangle()
-                            .fill(Color.surfaceSubtle)
-                            .frame(height: 200)
-                            .overlay(ProgressView())
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .cornerRadius(8)
-                .id(posterUrl)
+                EntryPosterImage(urlStrings: imageURLs)
+                    .frame(height: 200)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+                    .cornerRadius(8)
 
-                let imageCount = entry.allImages.count
+                let imageCount = entry.displayableImages.count
                 if imageCount > 1 {
                     HStack(spacing: 3) {
                         Image(systemName: "photo.on.rectangle")

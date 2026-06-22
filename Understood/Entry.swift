@@ -33,6 +33,7 @@ struct Entry: Codable, Identifiable, Hashable {
     static let maxImagesPerEntry = 6
 
     let id: String
+    let userId: String
     var headline: String
     var category: String
     var subheading: String?
@@ -72,13 +73,21 @@ struct Entry: Codable, Identifiable, Hashable {
         return firstLine.isEmpty ? "Untitled entry" : firstLine
     }
 
-    /// Poster image URL (checks images array, then legacy fields)
-    var posterImageUrl: String? {
-        if let images = images, !images.isEmpty {
-            let poster = images.first(where: { $0.isPoster }) ?? images[0]
-            return poster.url
+    /// Whether a string is a loadable remote image URL.
+    static func isValidImageURL(_ urlString: String?) -> Bool {
+        guard let raw = urlString?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return false
         }
-        return imageUrl ?? photoUrl
+        guard let url = URL(string: raw), let scheme = url.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
+    }
+
+    /// Trimmed HTTPS URL for display, if valid.
+    static func validImageURLString(_ urlString: String?) -> String? {
+        guard isValidImageURL(urlString) else { return nil }
+        return urlString?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// All images (converts legacy single-image to array format)
@@ -86,13 +95,29 @@ struct Entry: Codable, Identifiable, Hashable {
         if let images = images, !images.isEmpty {
             return images.sorted { $0.order < $1.order }
         }
-        if let url = imageUrl ?? photoUrl {
+        if let url = Self.validImageURLString(imageUrl ?? photoUrl) {
             return [EntryImage(url: url, isPoster: true, order: 0)]
         }
         return []
     }
 
-    /// Whether this entry has any images
+    /// Images with valid URLs — used for feed and carousel display.
+    var displayableImages: [EntryImage] {
+        allImages.filter { Self.isValidImageURL($0.url) }
+    }
+
+    /// Poster image URL (checks images array, then legacy fields)
+    var posterImageUrl: String? {
+        let candidates = displayableImages
+        guard !candidates.isEmpty else { return nil }
+        if let poster = candidates.first(where: { $0.isPoster }),
+           let url = Self.validImageURLString(poster.url) {
+            return url
+        }
+        return Self.validImageURLString(candidates[0].url)
+    }
+
+    /// Whether this entry has any displayable images
     var hasImages: Bool {
         posterImageUrl != nil
     }
@@ -167,18 +192,16 @@ struct Entry: Codable, Identifiable, Hashable {
 
     /// Poster image with focal point data
     var posterWithFocalPoint: (url: String, focalX: Double, focalY: Double)? {
-        if let images = images, !images.isEmpty {
-            let poster = images.first(where: { $0.isPoster }) ?? images[0]
-            return (poster.url, poster.focalX ?? 50, poster.focalY ?? 50)
-        }
-        if let url = imageUrl ?? photoUrl {
-            return (url, 50, 50)
-        }
-        return nil
+        let candidates = displayableImages
+        guard !candidates.isEmpty else { return nil }
+        let poster = candidates.first(where: { $0.isPoster }) ?? candidates[0]
+        guard let url = Self.validImageURLString(poster.url) else { return nil }
+        return (url, poster.focalX ?? 50, poster.focalY ?? 50)
     }
 
     enum CodingKeys: String, CodingKey {
         case id
+        case userId = "user_id"
         case headline
         case category
         case subheading

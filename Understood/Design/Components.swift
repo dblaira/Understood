@@ -6,6 +6,81 @@
 //
 
 import SwiftUI
+import UIKit
+
+struct EntryPosterImage: View {
+    let urlStrings: [String]
+    var showProgressOnLoad = true
+
+    @State private var loadedImage: UIImage?
+    @State private var failed = false
+
+    init(urlString: String, showProgressOnLoad: Bool = true) {
+        self.urlStrings = [urlString]
+        self.showProgressOnLoad = showProgressOnLoad
+    }
+
+    init(urlStrings: [String], showProgressOnLoad: Bool = true) {
+        self.urlStrings = urlStrings
+        self.showProgressOnLoad = showProgressOnLoad
+    }
+
+    var body: some View {
+        Group {
+            if let loadedImage {
+                Image(uiImage: loadedImage)
+                    .resizable()
+                    .scaledToFill()
+            } else if failed {
+                posterPlaceholder
+            } else if showProgressOnLoad {
+                posterPlaceholder
+                    .overlay { ProgressView() }
+            } else {
+                posterPlaceholder
+            }
+        }
+        .task(id: urlStrings.joined(separator: "|")) {
+            await loadImage()
+        }
+    }
+
+    private func loadImage() async {
+        loadedImage = nil
+        failed = false
+
+        for urlString in urlStrings {
+            guard let url = Entry.validImageURLString(urlString).flatMap(URL.init(string:)) else {
+                continue
+            }
+
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    continue
+                }
+                guard let image = UIImage(data: data), image.size.width > 1, image.size.height > 1 else {
+                    continue
+                }
+                loadedImage = image
+                return
+            } catch {
+                continue
+            }
+        }
+
+        failed = true
+    }
+
+    private var posterPlaceholder: some View {
+        ZStack {
+            Color.surfaceSubtle
+            Image(systemName: "photo")
+                .font(.system(size: 24))
+                .foregroundStyle(.textMuted)
+        }
+    }
+}
 
 // MARK: - Skeleton Loading
 

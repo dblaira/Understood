@@ -30,7 +30,10 @@ struct UnderstoodApp: App {
             .task {
                 #if DEBUG
                 if PhotoUploadVerifier.isEnabled {
-                    Task { await PhotoUploadVerifier.runIfNeeded() }
+                    await PhotoUploadVerifier.runIfNeeded()
+                    await MainActor.run {
+                        supabase.hasCheckedInitialSession = true
+                    }
                     return
                 }
                 #endif

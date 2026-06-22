@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct MainTabView: View {
     @Environment(AppNavigationState.self) private var nav
@@ -50,6 +51,13 @@ struct MainTabView: View {
                 .toolbar(.hidden, for: .navigationBar)
             }
 
+            RadialFabMenu(
+                isPresented: nav.isRadialMenuPresented,
+                highlightedKind: nav.highlightedCaptureKind,
+                onDismiss: { nav.dismissRadialMenu() },
+                onSelect: { kind in nav.openComposer(kind: kind) }
+            )
+
             BottomNavigationBar()
         }
         .fullScreenCover(isPresented: $nav.showMenu) {
@@ -61,7 +69,7 @@ struct MainTabView: View {
             .environment(nav)
         }
         .fullScreenCover(isPresented: $nav.showCapture) {
-            CaptureView(onSaved: {
+            EntryComposerView(initialKind: composerKind(for: nav.captureKind), onSaved: {
                 // Views will refresh via their own .task modifiers
             })
             .id(nav.captureSessionID)
@@ -84,6 +92,17 @@ struct MainTabView: View {
             subtitle: subtitle
         )
     }
+
+    private func composerKind(for kind: AppNavigationState.CaptureKind) -> EntryComposerKind {
+        switch kind {
+        case .reminder:
+            return .reminder
+        case .action:
+            return .action
+        case .event:
+            return .event
+        }
+    }
 }
 
 #Preview {
@@ -93,8 +112,11 @@ struct MainTabView: View {
 
 private struct BottomNavigationBar: View {
     @Environment(AppNavigationState.self) private var nav
+    @State private var draggingFab = false
+    @State private var menuWasOpenAtStart = false
     private let barBackground = Color(red: 0.80, green: 0.70, blue: 0.58)
     private let inactiveColor = Color(red: 0.34, green: 0.27, blue: 0.21).opacity(0.68)
+    private let fabSize: CGFloat = 70
 
     private var leadingSections: [(id: String, label: String, icon: String)] {
         Array(AppNavigationState.sections.prefix(2))
@@ -127,21 +149,64 @@ private struct BottomNavigationBar: View {
                 .fill(Color.white.opacity(0.22))
                 .frame(height: 1)
 
-            Button {
-                Haptics.medium()
-                nav.showCapture = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 70, height: 70)
-                    .background(Color.textPrimary)
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Capture")
-            .offset(y: -12)
+            Image(systemName: nav.isRadialMenuPresented ? "xmark" : "bolt.fill")
+                .font(.system(size: nav.isRadialMenuPresented ? 32 : 30, weight: .heavy))
+                .foregroundStyle(.white)
+                .overlay {
+                    if !nav.isRadialMenuPresented {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 32, weight: .heavy))
+                            .foregroundStyle(.understoodCrimson)
+                            .blendMode(.destinationOver)
+                    }
+                }
+                .frame(width: fabSize, height: fabSize)
+                .background(Color.textPrimary)
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
+                .contentShape(Circle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if !draggingFab {
+                                draggingFab = true
+                                menuWasOpenAtStart = nav.isRadialMenuPresented
+                                if !nav.isRadialMenuPresented {
+                                    FabHaptics.menuOpen()
+                                    withAnimation(FabMenuMotion.open) {
+                                        nav.isRadialMenuPresented = true
+                                    }
+                                }
+                            }
+
+                            let target = targetKind(for: value.translation)
+                            if target != nav.highlightedCaptureKind {
+                                nav.highlightedCaptureKind = target
+                                if target != nil {
+                                    FabHaptics.selection()
+                                }
+                            }
+                        }
+                        .onEnded { _ in
+                            if let selected = nav.highlightedCaptureKind {
+                                FabHaptics.primaryImpact()
+                                withAnimation(FabMenuMotion.close) {
+                                    nav.openComposer(kind: selected)
+                                }
+                            } else if menuWasOpenAtStart {
+                                FabHaptics.menuClose()
+                                withAnimation(FabMenuMotion.close) {
+                                    nav.dismissRadialMenu()
+                                }
+                            }
+
+                            draggingFab = false
+                            nav.highlightedCaptureKind = nil
+                        }
+                )
+            .accessibilityLabel(nav.isRadialMenuPresented ? "Close quick capture menu" : "Open quick capture menu")
+            // Center the FAB on the white/brown seam.
+            .offset(y: -(fabSize / 2))
         }
         .frame(height: 48)
         .background(barBackground.ignoresSafeArea(edges: .bottom))
@@ -168,6 +233,114 @@ private struct BottomNavigationBar: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(section.label)
+    }
+
+    private func targetKind(for translation: CGSize) -> AppNavigationState.CaptureKind? {
+        guard hypot(translation.width, translation.height) > 30 else { return nil }
+        let angle = atan2(-translation.height, translation.width) * 180 / .pi
+        if angle >= 45 && angle < 135 { return .action }     // up
+        if angle >= -45 && angle < 45 { return .event }      // right
+        if angle >= 135 || angle < -135 { return .reminder } // left
+        return nil
+    }
+}
+
+private struct RadialFabMenu: View {
+    let isPresented: Bool
+    let highlightedKind: AppNavigationState.CaptureKind?
+    let onDismiss: () -> Void
+    let onSelect: (AppNavigationState.CaptureKind) -> Void
+
+    var body: some View {
+        ZStack {
+            if isPresented {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        FabHaptics.menuClose()
+                        withAnimation(FabMenuMotion.close) {
+                            onDismiss()
+                        }
+                    }
+                    .transition(.opacity)
+
+                ZStack {
+                    radialButton(kind: .reminder, icon: "bell.fill", x: -118, y: 0)
+                    radialButton(kind: .action, icon: "bolt.fill", x: 0, y: -118)
+                    radialButton(kind: .event, icon: "calendar", x: 118, y: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                // Anchor the radial hub to the FAB center so swipe directions are cardinal.
+                .padding(.bottom, 48)
+                .transition(.scale(scale: 0.78, anchor: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    private func radialButton(
+        kind: AppNavigationState.CaptureKind,
+        icon: String,
+        x: CGFloat,
+        y: CGFloat
+    ) -> some View {
+        let isHighlighted = highlightedKind == kind
+        return Button {
+            FabHaptics.primaryImpact()
+            withAnimation(FabMenuMotion.close) {
+                onSelect(kind)
+            }
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 28, weight: .heavy))
+                .foregroundStyle(.white)
+                .frame(width: 66, height: 66)
+                .background(Color.understoodCrimson, in: Circle())
+                .overlay(
+                    Circle()
+                        .stroke(.white.opacity(isHighlighted ? 0.95 : 0.35), lineWidth: isHighlighted ? 3 : 1.5)
+                )
+                .scaleEffect(isHighlighted ? 1.14 : 1.0)
+                .shadow(color: Color.black.opacity(0.22), radius: 12, y: 8)
+        }
+        .buttonStyle(.plain)
+        .offset(x: x, y: y)
+        .accessibilityLabel(kind.rawValue.capitalized)
+    }
+}
+
+private enum FabMenuMotion {
+    // Snappier reveal when opening, smoother collapse when closing.
+    static let open = Animation.spring(response: 0.24, dampingFraction: 0.76)
+    static let close = Animation.spring(response: 0.42, dampingFraction: 0.82)
+}
+
+private enum FabHaptics {
+    @MainActor
+    static func primaryImpact() {
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.prepare()
+        generator.impactOccurred(intensity: 1.0)
+    }
+
+    @MainActor
+    static func menuOpen() {
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.prepare()
+        generator.impactOccurred(intensity: 1.0)
+    }
+
+    @MainActor
+    static func menuClose() {
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.prepare()
+        generator.impactOccurred(intensity: 1.0)
+    }
+
+    @MainActor
+    static func selection() {
+        let generator = UISelectionFeedbackGenerator()
+        generator.prepare()
+        generator.selectionChanged()
     }
 }
 

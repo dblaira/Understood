@@ -28,7 +28,68 @@ struct EntryDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            detailContent
+                .padding(24)
+        }
+        .background(Color.understoodCream.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbarBackground(Color.sandyBrown, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .tint(.black)
+        .toolbar { detailToolbar }
+        .alert("Delete Entry", isPresented: $showDeleteConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task { await deleteEntry() }
+            }
+        } message: {
+            Text("This will permanently delete this entry and cannot be undone.")
+        }
+        .sheet(isPresented: $showEntryEditor) {
+            EntryEditorView(entry: entry, onSaved: { updatedEntry in
+                entry = updatedEntry
+                currentImagePage = min(currentImagePage, max(0, updatedEntry.allImages.count - 1))
+                onFeaturedChanged?()
+            }, onDeleted: {
+                onDeleted?()
+                dismiss()
+            })
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var detailToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button {
+                dismiss()
+            } label: {
+                HeaderIconButton(systemName: "chevron.left")
+            }
+            .buttonStyle(.plain)
+        }
+
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            Button {
+                showEntryEditor = true
+            } label: {
+                HeaderIconButton(systemName: "pencil")
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                showDeleteConfirm = true
+            } label: {
+                HeaderIconButton(systemName: "trash")
+            }
+            .buttonStyle(.plain)
+            .disabled(isDeleting)
+        }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
 
                 // MARK: - Image Gallery
 
@@ -186,48 +247,6 @@ struct EntryDetailView: View {
                     .cornerRadius(8)
                 }
                 .disabled(isDeleting)
-            }
-            .padding(24)
-        }
-        .background(Color.understoodCream.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbarBackground(Color.sandyBrown, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .tint(.black)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    HeaderIconButton(systemName: "chevron.left")
-                }
-                .buttonStyle(.plain)
-            }
-
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showEntryEditor = true
-                } label: {
-                    HeaderIconButton(systemName: "pencil")
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .alert("Delete Entry", isPresented: $showDeleteConfirm) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                Task { await deleteEntry() }
-            }
-        } message: {
-            Text("This will permanently delete this entry and cannot be undone.")
-        }
-        .sheet(isPresented: $showEntryEditor) {
-            EntryEditorView(entry: entry) { updatedEntry in
-                entry = updatedEntry
-                currentImagePage = min(currentImagePage, max(0, updatedEntry.allImages.count - 1))
-                onFeaturedChanged?()
-            }
         }
     }
 
@@ -350,6 +369,7 @@ struct EntryDetailView: View {
 struct EntryEditorView: View {
     let entry: Entry
     let onSaved: (Entry) -> Void
+    var onDeleted: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var headline: String
@@ -366,6 +386,8 @@ struct EntryEditorView: View {
     @State private var isLoadingPhotos = false
     @State private var showCamera = false
     @State private var isSaving = false
+    @State private var isDeleting = false
+    @State private var showDeleteConfirm = false
     @State private var errorMessage: String?
 
     private let supabase = SupabaseService.shared
@@ -374,9 +396,10 @@ struct EntryEditorView: View {
         ("connection", "Connection")
     ]
 
-    init(entry: Entry, onSaved: @escaping (Entry) -> Void) {
+    init(entry: Entry, onSaved: @escaping (Entry) -> Void, onDeleted: (() -> Void)? = nil) {
         self.entry = entry
         self.onSaved = onSaved
+        self.onDeleted = onDeleted
         _headline = State(initialValue: entry.headline)
         _subheading = State(initialValue: entry.subheading ?? "")
         _content = State(initialValue: entry.content)
@@ -401,7 +424,7 @@ struct EntryEditorView: View {
     }
 
     private var canSave: Bool {
-        !cleanedContent.isEmpty && !isLoadingPhotos && !isSaving && errorMessage == nil
+        !cleanedContent.isEmpty && !isLoadingPhotos && !isSaving && !isDeleting
     }
 
     private var isEditingAction: Bool {
@@ -411,277 +434,343 @@ struct EntryEditorView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("TYPE")
-                            .font(Typography.sectionHeader)
-                            .tracking(1.5)
-                            .foregroundStyle(.textMuted)
-
-                        HStack(spacing: 8) {
-                            ForEach(entryTypes, id: \.id) { type in
-                                Button {
-                                    selectedEntryType = type.id
-                                    Haptics.selection()
-                                } label: {
-                                    Text(type.label)
-                                        .font(Typography.uiMedium)
-                                        .foregroundStyle(selectedEntryType == type.id ? .white : .textPrimary)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(selectedEntryType == type.id ? Color.black : Color.surfaceSubtle)
-                                        .cornerRadius(8)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("TITLE")
-                            .font(Typography.sectionHeader)
-                            .tracking(1.5)
-                            .foregroundStyle(.textMuted)
-
-                        TextField("Optional title", text: $headline, axis: .vertical)
-                            .font(Typography.editor)
-                            .foregroundStyle(.textPrimary)
-                            .padding(12)
-                            .background(Color.surfaceSubtle)
-                            .cornerRadius(8)
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("SUBTITLE")
-                            .font(Typography.sectionHeader)
-                            .tracking(1.5)
-                            .foregroundStyle(.textMuted)
-
-                        TextField("Optional subtitle", text: $subheading, axis: .vertical)
-                            .font(Typography.body)
-                            .foregroundStyle(.textPrimary)
-                            .padding(12)
-                            .background(Color.surfaceSubtle)
-                            .cornerRadius(8)
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("BODY")
-                            .font(Typography.sectionHeader)
-                            .tracking(1.5)
-                            .foregroundStyle(.textMuted)
-
-                        TextEditor(text: $content)
-                            .font(Typography.editor)
-                            .foregroundStyle(.textPrimary)
-                            .lineSpacing(4)
-                            .frame(minHeight: 220)
-                            .padding(8)
-                            .scrollContentBackground(.hidden)
-                            .background(Color.surfaceSubtle)
-                            .cornerRadius(8)
-                    }
-
-                    if !retainedImages.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("CURRENT PHOTOS")
-                                .font(Typography.sectionHeader)
-                                .tracking(1.5)
-                                .foregroundStyle(.textMuted)
-
-                            EditablePhotoThumbnailStrip(images: retainedImages) { index in
-                                retainedImages.remove(at: index)
-                                retainedImages = normalizedImages(retainedImages)
-                                currentPhotoSelectionTrimmedToLimit()
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("ADD PHOTOS")
-                            .font(Typography.sectionHeader)
-                            .tracking(1.5)
-                            .foregroundStyle(.textMuted)
-
-                        if availableNewImageSlots > 0 {
-                            HStack(spacing: 10) {
-                                PhotosPicker(
-                                    selection: $selectedPhotoItems,
-                                    maxSelectionCount: max(1, remainingSlots),
-                                    matching: .images,
-                                    photoLibrary: .shared()
-                                ) {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "photo.on.rectangle.angled")
-                                        Text(selectedImages.isEmpty ? "Choose Photos" : "\(selectedImages.count) Selected")
-                                        Spacer()
-                                    }
-                                    .font(Typography.uiMedium)
-                                    .foregroundStyle(.textPrimary)
-                                    .padding(14)
-                                    .background(Color.surfaceSubtle)
-                                    .cornerRadius(8)
-                                }
-                                .onChange(of: selectedPhotoItems) { _, items in
-                                    Task { await loadSelectedPhotos(items) }
-                                }
-                                .disabled(remainingSlots == 0)
-
-                                Button {
-                                    Task { await openCamera() }
-                                } label: {
-                                    Image(systemName: "camera.fill")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundStyle(.textPrimary)
-                                        .frame(width: 50, height: 50)
-                                        .background(Color.surfaceSubtle)
-                                        .cornerRadius(8)
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(remainingSlots == 0 || !CameraAccess.isAvailable)
-                            }
-
-                            if !selectedImages.isEmpty {
-                                SelectedPhotoStrip(images: selectedImages) { index in
-                                    selectedImages.remove(at: index)
-                                    if index < selectedPhotoItems.count {
-                                        selectedPhotoItems.remove(at: index)
-                                    }
-                                }
-                            }
-                        } else {
-                            Text("This entry already has the maximum of \(Entry.maxImagesPerEntry) photos.")
-                                .font(Typography.body)
-                                .foregroundStyle(.textSecondary)
-                        }
-
-                        if isLoadingPhotos {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .scaleEffect(0.75)
-                                Text("Preparing photos...")
-                                    .font(Typography.small)
-                                    .foregroundStyle(.textSecondary)
-                            }
-                        }
-
-                        if let errorMessage {
-                            Text(errorMessage)
-                                .font(Typography.small)
-                                .foregroundStyle(.red)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("PATTERN")
-                            .font(Typography.sectionHeader)
-                            .tracking(1.5)
-                            .foregroundStyle(.textMuted)
-
-                        Menu {
-                            Button {
-                                selectedPatternStep = nil
-                                Haptics.selection()
-                            } label: {
-                                if selectedPatternStep == nil {
-                                    Label("None", systemImage: "checkmark")
-                                } else {
-                                    Text("None")
-                                }
-                            }
-
-                            ForEach(AdamPattern.steps, id: \.self) { step in
-                                Button {
-                                    selectedPatternStep = step
-                                    Haptics.selection()
-                                } label: {
-                                    if selectedPatternStep == step {
-                                        Label(step, systemImage: "checkmark")
-                                    } else {
-                                        Text(step)
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "list.number")
-                                Text(selectedPatternStep ?? "None")
-                                    .font(Typography.uiMedium)
-                                Spacer()
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .foregroundStyle(.understoodCrimson)
-                            .padding(14)
-                            .background(Color.surfaceSubtle)
-                            .cornerRadius(8)
-                        }
-                    }
-                }
-                .padding(24)
+                entryEditorFields
+                    .padding(24)
             }
             .background(Color.understoodCream.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color.sandyBrown, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .tint(.black)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        HeaderPillButton(title: "Cancel", isEnabled: !isSaving)
-                    }
-                    .disabled(isSaving)
-                    .buttonStyle(.plain)
+            .toolbar { editorToolbar }
+            .sheet(isPresented: $showCamera) { cameraSheet }
+            .alert("Delete Entry", isPresented: $showDeleteConfirm) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) {
+                    Task { await deleteEntry() }
                 }
-
-                ToolbarItem(placement: .principal) {
-                    Text("Edit Entry")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.black)
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        Task { await saveEntry() }
-                    } label: {
-                        if isSaving {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .tint(.white)
-                                .frame(width: 56, height: 46)
-                                .background(Color.black.opacity(0.9))
-                                .clipShape(Capsule())
-                        } else {
-                            HeaderPillButton(title: "Save", isEnabled: canSave)
-                        }
-                    }
-                    .disabled(!canSave)
-                    .buttonStyle(.plain)
-                }
-            }
-            .sheet(isPresented: $showCamera) {
-                CameraImagePicker { image in
-                    guard let image, remainingSlots > 0 else { return }
-                    selectedImages.append(image)
-                    selectedPhotoItems.removeAll()
-                    errorMessage = nil
-                }
-                .ignoresSafeArea()
+            } message: {
+                Text("This will permanently delete this entry and cannot be undone.")
             }
         }
+    }
+
+    @ToolbarContentBuilder
+    private var editorToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button {
+                dismiss()
+            } label: {
+                HeaderPillButton(title: "Cancel", isEnabled: !isSaving)
+            }
+            .disabled(isSaving)
+            .buttonStyle(.plain)
+        }
+
+        ToolbarItem(placement: .principal) {
+            Text("Edit Entry")
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundStyle(.black)
+        }
+
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button {
+                Task { await saveEntry() }
+            } label: {
+                if isSaving {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.white)
+                        .frame(width: 56, height: 46)
+                        .background(Color.black.opacity(0.9))
+                        .clipShape(Capsule())
+                } else {
+                    HeaderPillButton(title: "Save", isEnabled: canSave)
+                }
+            }
+            .disabled(!canSave)
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var cameraSheet: some View {
+        CameraImagePicker { image in
+            guard let image, remainingSlots > 0 else { return }
+            selectedImages.append(image.uprightOrientation())
+            selectedPhotoItems.removeAll()
+            errorMessage = nil
+        }
+        .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private var entryEditorFields: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            editorTypeSection
+            editorTitleSection
+            editorSubtitleSection
+            editorBodySection
+            editorRetainedPhotosSection
+            editorAddPhotosSection
+            editorPatternSection
+            editorDeleteButton
+        }
+    }
+
+    @ViewBuilder
+    private var editorTypeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("TYPE")
+                .font(Typography.sectionHeader)
+                .tracking(1.5)
+                .foregroundStyle(.textMuted)
+
+            HStack(spacing: 8) {
+                ForEach(entryTypes, id: \.id) { type in
+                    Button {
+                        selectedEntryType = type.id
+                        Haptics.selection()
+                    } label: {
+                        Text(type.label)
+                            .font(Typography.uiMedium)
+                            .foregroundStyle(selectedEntryType == type.id ? .white : .textPrimary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(selectedEntryType == type.id ? Color.black : Color.surfaceSubtle)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var editorTitleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("TITLE")
+                .font(Typography.sectionHeader)
+                .tracking(1.5)
+                .foregroundStyle(.textMuted)
+
+            TextField("Optional title", text: $headline, axis: .vertical)
+                .font(Typography.editor)
+                .foregroundStyle(.textPrimary)
+                .padding(12)
+                .background(Color.surfaceSubtle)
+                .cornerRadius(8)
+        }
+    }
+
+    @ViewBuilder
+    private var editorSubtitleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("SUBTITLE")
+                .font(Typography.sectionHeader)
+                .tracking(1.5)
+                .foregroundStyle(.textMuted)
+
+            TextField("Optional subtitle", text: $subheading, axis: .vertical)
+                .font(Typography.body)
+                .foregroundStyle(.textPrimary)
+                .padding(12)
+                .background(Color.surfaceSubtle)
+                .cornerRadius(8)
+        }
+    }
+
+    @ViewBuilder
+    private var editorBodySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("BODY")
+                .font(Typography.sectionHeader)
+                .tracking(1.5)
+                .foregroundStyle(.textMuted)
+
+            TextEditor(text: $content)
+                .font(Typography.editor)
+                .foregroundStyle(.textPrimary)
+                .lineSpacing(4)
+                .frame(minHeight: 220)
+                .padding(8)
+                .scrollContentBackground(.hidden)
+                .background(Color.surfaceSubtle)
+                .cornerRadius(8)
+        }
+    }
+
+    @ViewBuilder
+    private var editorRetainedPhotosSection: some View {
+        if !retainedImages.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("CURRENT PHOTOS")
+                    .font(Typography.sectionHeader)
+                    .tracking(1.5)
+                    .foregroundStyle(.textMuted)
+
+                EditablePhotoThumbnailStrip(images: retainedImages) { index in
+                    retainedImages.remove(at: index)
+                    retainedImages = normalizedImages(retainedImages)
+                    currentPhotoSelectionTrimmedToLimit()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var editorAddPhotosSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("ADD PHOTOS")
+                .font(Typography.sectionHeader)
+                .tracking(1.5)
+                .foregroundStyle(.textMuted)
+
+            if availableNewImageSlots > 0 {
+                HStack(spacing: 10) {
+                    PhotosPicker(
+                        selection: $selectedPhotoItems,
+                        maxSelectionCount: max(1, remainingSlots),
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                            Text(selectedImages.isEmpty ? "Choose Photos" : "\(selectedImages.count) Selected")
+                            Spacer()
+                        }
+                        .font(Typography.uiMedium)
+                        .foregroundStyle(.textPrimary)
+                        .padding(14)
+                        .background(Color.surfaceSubtle)
+                        .cornerRadius(8)
+                    }
+                    .onChange(of: selectedPhotoItems) { _, items in
+                        Task { await loadSelectedPhotos(items) }
+                    }
+                    .disabled(remainingSlots == 0)
+
+                    Button {
+                        Task { await openCamera() }
+                    } label: {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.textPrimary)
+                            .frame(width: 50, height: 50)
+                            .background(Color.surfaceSubtle)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(remainingSlots == 0 || !CameraAccess.isAvailable)
+                }
+
+                if !selectedImages.isEmpty {
+                    SelectedPhotoStrip(images: selectedImages) { index in
+                        selectedImages.remove(at: index)
+                        if index < selectedPhotoItems.count {
+                            selectedPhotoItems.remove(at: index)
+                        }
+                    }
+                }
+            } else {
+                Text("This entry already has the maximum of \(Entry.maxImagesPerEntry) photos.")
+                    .font(Typography.body)
+                    .foregroundStyle(.textSecondary)
+            }
+
+            if isLoadingPhotos {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.75)
+                    Text("Preparing photos...")
+                        .font(Typography.small)
+                        .foregroundStyle(.textSecondary)
+                }
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(Typography.small)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var editorPatternSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("PATTERN")
+                .font(Typography.sectionHeader)
+                .tracking(1.5)
+                .foregroundStyle(.textMuted)
+
+            Menu {
+                Button {
+                    selectedPatternStep = nil
+                    Haptics.selection()
+                } label: {
+                    if selectedPatternStep == nil {
+                        Label("None", systemImage: "checkmark")
+                    } else {
+                        Text("None")
+                    }
+                }
+
+                ForEach(AdamPattern.steps, id: \.self) { step in
+                    Button {
+                        selectedPatternStep = step
+                        Haptics.selection()
+                    } label: {
+                        if selectedPatternStep == step {
+                            Label(step, systemImage: "checkmark")
+                        } else {
+                            Text(step)
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "list.number")
+                    Text(selectedPatternStep ?? "None")
+                        .font(Typography.uiMedium)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.understoodCrimson)
+                .padding(14)
+                .background(Color.surfaceSubtle)
+                .cornerRadius(8)
+            }
+        }
+    }
+
+    private var editorDeleteButton: some View {
+        Button(role: .destructive) {
+            showDeleteConfirm = true
+        } label: {
+            HStack {
+                Image(systemName: "trash")
+                Text("Delete Entry")
+            }
+            .font(Typography.uiMedium)
+            .fontWeight(.semibold)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(Color.red.opacity(0.1))
+            .foregroundStyle(.red)
+            .cornerRadius(8)
+        }
+        .disabled(isSaving || isDeleting)
     }
 
     private func openCamera() async {
         guard remainingSlots > 0 else { return }
 
-        switch await CameraAccess.requestIfNeeded() {
-        case .success:
-            showCamera = true
-        case .failure(let message):
+        if let message = await CameraAccess.requestIfNeeded() {
             errorMessage = message
+        } else {
+            showCamera = true
         }
     }
 
@@ -700,10 +789,30 @@ struct EntryEditorView: View {
         }
 
         await MainActor.run {
-            selectedImages = loadedImages
+            selectedImages = loadedImages.map { $0.uprightOrientation() }
             isLoadingPhotos = false
             if loadedImages.count != items.count {
                 errorMessage = "One or more photos could not be prepared. Remove and re-add them before saving."
+            }
+        }
+    }
+
+    private func deleteEntry() async {
+        isDeleting = true
+        errorMessage = nil
+
+        do {
+            try await supabase.deleteEntry(id: entry.id)
+            await MainActor.run {
+                Haptics.warning()
+                onDeleted?()
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                Haptics.error()
+                errorMessage = "Could not delete entry: \(error.localizedDescription)"
+                isDeleting = false
             }
         }
     }

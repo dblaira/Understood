@@ -46,6 +46,8 @@ struct CaptureView: View {
     @State private var lastAutosavedPatternStep: String? = nil
     @State private var hasLocalDraft = false
     @State private var saveFeedbackVisible = false
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
 
     var onSaved: (() -> Void)?
 
@@ -57,7 +59,7 @@ struct CaptureView: View {
     }
 
     private var canSave: Bool {
-        !trimmedContent.isEmpty && !isSaving && !isLoadingPhotos && photoLoadError == nil
+        !trimmedContent.isEmpty && !isSaving && !isLoadingPhotos
     }
 
     private var remainingImageSlots: Int {
@@ -271,6 +273,17 @@ struct CaptureView: View {
                         .fontWeight(.bold)
                         .foregroundStyle(.black)
                 }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .disabled(isSaving || isDeleting)
+                    .accessibilityLabel(savedEntry == nil ? "Discard draft" : "Delete entry")
+                }
             }
             .onAppear {
                 if let prefillCategory, AdamPattern.isValidStep(prefillCategory) {
@@ -291,13 +304,36 @@ struct CaptureView: View {
             .sheet(isPresented: $showCamera) {
                 CameraImagePicker { image in
                     guard let image, remainingImageSlots > 0 else { return }
-                    selectedImages.append(image)
+                    selectedImages.append(image.uprightOrientation())
                     selectedPhotoItems.removeAll()
                     photoLoadError = nil
                 }
                 .ignoresSafeArea()
             }
+            .alert(deleteAlertTitle, isPresented: $showDeleteConfirm) {
+                Button("Cancel", role: .cancel) {}
+                Button(deleteAlertActionTitle, role: .destructive) {
+                    Task { await handleDeleteAction() }
+                }
+            } message: {
+                Text(deleteAlertMessage)
+            }
         }
+    }
+
+    private var deleteAlertTitle: String {
+        savedEntry == nil ? "Discard Draft?" : "Delete Entry?"
+    }
+
+    private var deleteAlertActionTitle: String {
+        savedEntry == nil ? "Discard" : "Delete"
+    }
+
+    private var deleteAlertMessage: String {
+        if savedEntry != nil {
+            return "This will permanently delete this entry and cannot be undone."
+        }
+        return "Clear everything in this capture screen?"
     }
 
     private var bottomCaptureDock: some View {
@@ -449,11 +485,10 @@ struct CaptureView: View {
     private func openCamera() async {
         guard remainingImageSlots > 0 else { return }
 
-        switch await CameraAccess.requestIfNeeded() {
-        case .success:
-            showCamera = true
-        case .failure(let message):
+        if let message = await CameraAccess.requestIfNeeded() {
             photoLoadError = message
+        } else {
+            showCamera = true
         }
     }
 
@@ -473,12 +508,52 @@ struct CaptureView: View {
             }
         }
         await MainActor.run {
-            selectedImages = newImages
+            selectedImages = newImages.map { $0.uprightOrientation() }
             isLoadingPhotos = false
             if newImages.count != items.count {
                 photoLoadError = "One or more photos could not be prepared. Remove and re-add them before saving."
             }
         }
+    }
+
+    private func handleDeleteAction() async {
+        if let savedEntry {
+            isDeleting = true
+            errorMessage = nil
+            do {
+                try await supabase.deleteEntry(id: savedEntry.id)
+                await MainActor.run {
+                    Haptics.warning()
+                    resetCaptureState()
+                    onSaved?()
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    Haptics.error()
+                    errorMessage = "Could not delete entry: \(error.localizedDescription)"
+                    isDeleting = false
+                }
+            }
+        } else {
+            resetCaptureState()
+            Haptics.light()
+            dismiss()
+        }
+    }
+
+    private func resetCaptureState() {
+        autosaveTask?.cancel()
+        speechCapture.stopTranscription()
+        clearLocalDraft()
+        content = ""
+        selectedPatternStep = nil
+        selectedImages = []
+        selectedPhotoItems = []
+        savedEntry = nil
+        errorMessage = nil
+        photoLoadError = nil
+        isDeleting = false
     }
 
     // MARK: - Save Logic

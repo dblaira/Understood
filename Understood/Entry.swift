@@ -109,6 +109,13 @@ struct Entry: Codable, Identifiable, Hashable {
         return step.uppercased()
     }
 
+    /// Hero title with collapsed whitespace — avoids stretched multi-line layout.
+    var heroHeadline: String {
+        displayHeadline
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Entry Type Helpers
 
     var isPinned: Bool { pinnedAt != nil }

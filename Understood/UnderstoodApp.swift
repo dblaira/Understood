@@ -16,12 +16,53 @@ struct UnderstoodApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if supabase.isAuthenticated {
-                MainTabView()
-                    .environment(nav)
-            } else {
-                LoginView()
+            Group {
+                if !supabase.hasCheckedInitialSession {
+                    LaunchAuthCheckView()
+                } else if supabase.isAuthenticated {
+                    MainTabView()
+                        .environment(nav)
+                } else {
+                    LoginView()
+                }
             }
+            .background(Color.understoodCream)
+            .task {
+                #if DEBUG
+                if PhotoUploadVerifier.isEnabled {
+                    Task { await PhotoUploadVerifier.runIfNeeded() }
+                    return
+                }
+                #endif
+
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        await supabase.checkSession()
+                    }
+                    group.addTask {
+                        try? await Task.sleep(for: .seconds(4))
+                        await MainActor.run {
+                            if !supabase.hasCheckedInitialSession {
+                                supabase.hasCheckedInitialSession = true
+                            }
+                        }
+                    }
+                    _ = await group.next()
+                    group.cancelAll()
+                }
+            }
+        }
+    }
+}
+
+private struct LaunchAuthCheckView: View {
+    var body: some View {
+        ZStack {
+            Color.understoodCream
+                .ignoresSafeArea()
+
+            ProgressView()
+                .tint(.textPrimary)
         }
     }
 }

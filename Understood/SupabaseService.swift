@@ -17,6 +17,7 @@ class SupabaseService {
 
     let client: SupabaseClient
     var currentSession: Session?
+    var hasCheckedInitialSession = false
     var isAuthenticated: Bool {
         currentSession != nil
     }
@@ -33,10 +34,7 @@ class SupabaseService {
             supabaseKey: supabaseKey
         )
 
-        // Check for existing session on init
-        Task {
-            await checkSession()
-        }
+        // Session restore is triggered from UnderstoodApp.task on launch.
     }
 
     // MARK: - Authentication
@@ -52,6 +50,10 @@ class SupabaseService {
             await MainActor.run {
                 self.currentSession = nil
             }
+        }
+
+        await MainActor.run {
+            self.hasCheckedInitialSession = true
         }
     }
 
@@ -507,101 +509,67 @@ class SupabaseService {
 
     /// Resize a UIImage to max width, maintaining aspect ratio
     private func resizeImage(_ image: UIImage, maxWidth: CGFloat = 1200) -> UIImage {
-        let size = image.size
-        guard size.width > maxWidth else { return image }
+        let upright = image.uprightOrientation()
+        let size = upright.size
+        guard size.width > maxWidth else { return upright }
         let scale = maxWidth / size.width
         let newSize = CGSize(width: maxWidth, height: size.height * scale)
         let renderer = UIGraphicsImageRenderer(size: newSize)
         return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
+            upright.draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
 
-    /// Upload an image to Supabase Storage entry-photos bucket
-    /// Returns the public URL of the uploaded image
-    func uploadEntryImage(image: UIImage, userId: String, entryId: String, index: Int) async throws -> String {
-        guard let token = currentSession?.accessToken else {
-            throw NSError(domain: "SupabaseService", code: 401,
-                          userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+    /// Refresh session if needed before storage writes.
+    private func ensureAuthenticatedSession() async throws {
+        if currentSession == nil {
+            await checkSession()
         }
+        if currentSession != nil {
+            _ = try? await client.auth.refreshSession()
+            return
+        }
+        throw NSError(
+            domain: "SupabaseService",
+            code: 401,
+            userInfo: [NSLocalizedDescriptionKey: "Not authenticated"]
+        )
+    }
 
-        guard let url = URL(string: "\(Self.apiBaseURL)/api/upload-photo") else {
-            throw NSError(domain: "SupabaseService", code: 400,
-                          userInfo: [NSLocalizedDescriptionKey: "Invalid upload URL"])
-        }
+    private static let entryPhotosBucket = "entry-photos"
+
+    /// Upload an image to Supabase Storage entry-photos bucket (iOS-native path).
+    /// Returns the public URL of the uploaded image.
+    func uploadEntryImage(image: UIImage, userId: String, entryId: String, index: Int) async throws -> String {
+        try await ensureAuthenticatedSession()
 
         let resized = resizeImage(image)
 
         guard let jpegData = resized.jpegData(compressionQuality: 0.85) else {
-            throw NSError(domain: "SupabaseService", code: 500,
-                          userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to JPEG"])
+            throw NSError(
+                domain: "SupabaseService",
+                code: 500,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to JPEG"]
+            )
         }
 
-        let boundary = "Boundary-\(UUID().uuidString)"
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
+        let folder = userId.lowercased()
+        let filePath = "\(folder)/\(entryId)-\(index)-\(timestamp).jpg"
 
-        var body = Data()
-        appendMultipartField(name: "entryId", value: entryId, boundary: boundary, to: &body)
-        appendMultipartFile(
-            fieldName: "file",
-            fileName: "\(entryId)-\(index).jpg",
-            contentType: "image/jpeg",
-            data: jpegData,
-            boundary: boundary,
-            to: &body
-        )
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        try await client.storage
+            .from(Self.entryPhotosBucket)
+            .upload(
+                filePath,
+                data: jpegData,
+                options: FileOptions(contentType: "image/jpeg", upsert: false)
+            )
 
-        let (data, response) = try await URLSession.shared.upload(for: request, from: body)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "SupabaseService", code: 500,
-                          userInfo: [NSLocalizedDescriptionKey: "Invalid upload response"])
-        }
+        let publicURL = try client.storage
+            .from(Self.entryPhotosBucket)
+            .getPublicURL(path: filePath)
 
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            let message = parseUploadError(data) ?? "Image upload failed with status \(httpResponse.statusCode)"
-            throw NSError(domain: "SupabaseService", code: httpResponse.statusCode,
-                          userInfo: [NSLocalizedDescriptionKey: message])
-        }
-
-        let uploadResponse = try JSONDecoder().decode(UploadPhotoResponse.self, from: data)
-        guard let publicUrl = uploadResponse.photoUrl ?? uploadResponse.uploadedUrls?.first else {
-            throw NSError(domain: "SupabaseService", code: 500,
-                          userInfo: [NSLocalizedDescriptionKey: "Upload response did not include an image URL"])
-        }
-
-        return publicUrl
-    }
-
-    private func appendMultipartField(name: String, value: String, boundary: String, to body: inout Data) {
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(value)\r\n".data(using: .utf8)!)
-    }
-
-    private func appendMultipartFile(
-        fieldName: String,
-        fileName: String,
-        contentType: String,
-        data: Data,
-        boundary: String,
-        to body: inout Data
-    ) {
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
-        body.append(data)
-        body.append("\r\n".data(using: .utf8)!)
-    }
-
-    private func parseUploadError(_ data: Data) -> String? {
-        if let response = try? JSONDecoder().decode(UploadErrorResponse.self, from: data) {
-            return response.error
-        }
-        return String(data: data, encoding: .utf8)
+        return publicURL.absoluteString
     }
 
     /// Update an entry's images array and legacy photo_url field

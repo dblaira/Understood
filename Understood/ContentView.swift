@@ -261,15 +261,12 @@ struct HeroStoryView: View {
                     .layoutPriority(1)
             }
 
-            Text(entry.displayHeadline)
-                .font(.custom("PlayfairDisplay-Regular", size: 40))
+            Text(entry.heroHeadline)
+                .font(Typography.headline)
                 .foregroundStyle(.white)
-                .lineLimit(nil)
-                .lineSpacing(5)
-                .minimumScaleFactor(0.82)
+                .lineLimit(4)
+                .multilineTextAlignment(.leading)
                 .layoutPriority(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 8)
 
             if let subheading = entry.subheading, !subheading.isEmpty {
                 Text(subheading)

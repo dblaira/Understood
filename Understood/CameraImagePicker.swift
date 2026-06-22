@@ -10,21 +10,22 @@ import SwiftUI
 import UIKit
 
 enum CameraAccess {
-    static func requestIfNeeded() async -> Result<Void, String> {
+    /// `nil` when access is granted; otherwise a user-facing denial message.
+    static func requestIfNeeded() async -> String? {
         let status = AVCaptureDevice.authorizationStatus(for: .video)
 
         switch status {
         case .authorized:
-            return .success(())
+            return nil
         case .notDetermined:
             let granted = await AVCaptureDevice.requestAccess(for: .video)
             return granted
-                ? .success(())
-                : .failure("Camera access is needed to attach photos. Enable it in Settings → Understood.")
+                ? nil
+                : "Camera access is needed to attach photos. Enable it in Settings → Understood."
         case .denied, .restricted:
-            return .failure("Camera access is off. Enable it in Settings → Understood → Camera.")
+            return "Camera access is off. Enable it in Settings → Understood → Camera."
         @unknown default:
-            return .failure("Camera is not available right now.")
+            return "Camera is not available right now."
         }
     }
 
@@ -63,13 +64,30 @@ struct CameraImagePicker: UIViewControllerRepresentable {
             _ picker: UIImagePickerController,
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
         ) {
-            parent.onComplete(info[.originalImage] as? UIImage)
+            let image = info[.originalImage] as? UIImage
             parent.dismiss()
+            DispatchQueue.main.async {
+                self.parent.onComplete(image)
+            }
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.onComplete(nil)
             parent.dismiss()
+            DispatchQueue.main.async {
+                self.parent.onComplete(nil)
+            }
+        }
+    }
+}
+
+extension UIImage {
+    /// Camera photos often arrive rotated; normalize before preview and upload.
+    func uprightOrientation() -> UIImage {
+        guard imageOrientation != .up else { return self }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
         }
     }
 }

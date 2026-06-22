@@ -149,17 +149,17 @@ private struct BottomNavigationBar: View {
                 .fill(Color.white.opacity(0.22))
                 .frame(height: 1)
 
-            Image(systemName: nav.isRadialMenuPresented ? "xmark" : "bolt.fill")
-                .font(.system(size: nav.isRadialMenuPresented ? 32 : 30, weight: .heavy))
-                .foregroundStyle(.white)
-                .overlay {
-                    if !nav.isRadialMenuPresented {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 32, weight: .heavy))
-                            .foregroundStyle(.understoodCrimson)
-                            .blendMode(.destinationOver)
-                    }
+            ZStack {
+                if !nav.isRadialMenuPresented {
+                    // Slightly larger red underlay creates a thin visible outline.
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 34, weight: .heavy))
+                        .foregroundStyle(.understoodCrimson)
                 }
+                Image(systemName: nav.isRadialMenuPresented ? "xmark" : "bolt.fill")
+                    .font(.system(size: nav.isRadialMenuPresented ? 32 : 30, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
                 .frame(width: fabSize, height: fabSize)
                 .background(Color.textPrimary)
                 .clipShape(Circle())

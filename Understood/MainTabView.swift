@@ -10,7 +10,11 @@ import UIKit
 
 struct MainTabView: View {
     @Environment(AppNavigationState.self) private var nav
+    @EnvironmentObject private var reminderStore: ReminderStore
     let supabase = SupabaseService.shared
+
+    @State private var editingReminder: Reminder?
+    @State private var pendingSeed: Reminder?
 
     var body: some View {
         @Bindable var nav = nav
@@ -21,12 +25,11 @@ struct MainTabView: View {
                     Color.understoodCream
                         .ignoresSafeArea()
 
-                    // Route to active section
                     switch nav.currentSection {
                     case "story":
                         ContentView(patternFilter: nav.currentFilter)
                     case "connection":
-                        BeliefLibraryView(patternFilter: nav.currentFilter)
+                        RemindersHomeView(onOpen: openReminder)
                     case "extraction":
                         ExtractionsView()
                     case "timeline":
@@ -36,11 +39,7 @@ struct MainTabView: View {
                             subtitle: "Deterministic readouts and inference layers will live here."
                         )
                     case "note":
-                        placeholderView(
-                            icon: "note.text",
-                            title: "Notes",
-                            subtitle: "Coming soon — category-styled note cards"
-                        )
+                        BeliefLibraryView(patternFilter: nav.currentFilter)
                     case "action":
                         ActionsView(patternFilter: nav.currentFilter)
                     default:
@@ -51,14 +50,17 @@ struct MainTabView: View {
                 .toolbar(.hidden, for: .navigationBar)
             }
 
-            RadialFabMenu(
-                isPresented: nav.isRadialMenuPresented,
-                highlightedKind: nav.highlightedCaptureKind,
-                onDismiss: { nav.dismissRadialMenu() },
-                onSelect: { kind in nav.openComposer(kind: kind) }
-            )
+            if nav.isRadialMenuPresented {
+                Color.black.opacity(0.45)
+                    .ignoresSafeArea()
+                    .onTapGesture { closeFabMenu() }
+                    .transition(.opacity)
+            }
 
-            BottomNavigationBar()
+            BottomNavigationBar(
+                onSelectKind: startEntry,
+                onCloseMenu: closeFabMenu
+            )
         }
         .fullScreenCover(isPresented: $nav.showMenu) {
             FullScreenMenuView(onSignOut: {
@@ -68,12 +70,16 @@ struct MainTabView: View {
             })
             .environment(nav)
         }
-        .fullScreenCover(isPresented: $nav.showCapture) {
-            EntryComposerView(initialKind: composerKind(for: nav.captureKind), onSaved: {
-                // Views will refresh via their own .task modifiers
-            })
+        .sheet(isPresented: $nav.showCapture, onDismiss: {
+            editingReminder = nil
+            pendingSeed = nil
+        }) {
+            EntryComposerView(
+                initialKind: nav.captureKind.reminderKind,
+                existing: editingReminder ?? pendingSeed,
+                existingTags: knownTags
+            ) { reminderStore.save($0) }
             .id(nav.captureSessionID)
-            .environment(nav)
         }
         .sheet(isPresented: $nav.showSettings) {
             SettingsView(onSignOut: {
@@ -84,39 +90,63 @@ struct MainTabView: View {
         }
     }
 
-    /// Placeholder for sections not yet built
-    private func placeholderView(icon: String, title: String, subtitle: String) -> some View {
-        EmptyStateView(
-            icon: icon,
-            title: title,
-            subtitle: subtitle
+    private var knownTags: [String] {
+        let counts = Dictionary(
+            reminderStore.reminders.flatMap(\.tags).map { ($0, 1) },
+            uniquingKeysWith: +
         )
+        return counts
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .map(\.key)
     }
 
-    private func composerKind(for kind: AppNavigationState.CaptureKind) -> EntryComposerKind {
-        switch kind {
-        case .reminder:
-            return .reminder
-        case .action:
-            return .action
-        case .event:
-            return .event
+    private func startEntry(_ kind: AppNavigationState.CaptureKind) {
+        editingReminder = nil
+        pendingSeed = nil
+        nav.openComposer(kind: kind)
+    }
+
+    private func openReminder(_ reminder: Reminder) {
+        editingReminder = reminder
+        pendingSeed = nil
+        nav.captureKind = switch reminder.kind {
+        case .reminder: .reminder
+        case .action: .action
+        case .event: .event
         }
+        nav.captureSessionID = UUID()
+        nav.showCapture = true
+    }
+
+    private func closeFabMenu() {
+        FabHaptics.menuClose()
+        withAnimation(FabMenuMotion.close) {
+            nav.dismissRadialMenu()
+        }
+    }
+
+    private func placeholderView(icon: String, title: String, subtitle: String) -> some View {
+        EmptyStateView(icon: icon, title: title, subtitle: subtitle)
     }
 }
 
 #Preview {
     MainTabView()
         .environment(AppNavigationState())
+        .environmentObject(ReminderStore())
 }
 
 private struct BottomNavigationBar: View {
     @Environment(AppNavigationState.self) private var nav
     @State private var draggingFab = false
     @State private var menuWasOpenAtStart = false
-    private let barBackground = Color(red: 0.80, green: 0.70, blue: 0.58)
+
+    let onSelectKind: (AppNavigationState.CaptureKind) -> Void
+    let onCloseMenu: () -> Void
+
+    private let barBackground = Color.sandyBrown
     private let inactiveColor = Color(red: 0.34, green: 0.27, blue: 0.21).opacity(0.68)
-    private let fabSize: CGFloat = 70
+    private let fabSize: CGFloat = 64
 
     private var leadingSections: [(id: String, label: String, icon: String)] {
         Array(AppNavigationState.sections.prefix(2))
@@ -150,63 +180,15 @@ private struct BottomNavigationBar: View {
                 .frame(height: 1)
 
             ZStack {
-                if !nav.isRadialMenuPresented {
-                    // Slightly larger red underlay creates a thin visible outline.
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 34, weight: .heavy))
-                        .foregroundStyle(.understoodCrimson)
+                if nav.isRadialMenuPresented {
+                    fabOption(.reminder, icon: "clock").offset(x: -76, y: -40)
+                    fabOption(.action, icon: "bolt.fill").offset(x: 0, y: -116)
+                    fabOption(.event, icon: "calendar").offset(x: 76, y: -40)
                 }
-                Image(systemName: nav.isRadialMenuPresented ? "xmark" : "bolt.fill")
-                    .font(.system(size: nav.isRadialMenuPresented ? 32 : 30, weight: .heavy))
-                    .foregroundStyle(.white)
+
+                fab
+                    .offset(y: -22)
             }
-                .frame(width: fabSize, height: fabSize)
-                .background(Color.textPrimary)
-                .clipShape(Circle())
-                .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
-                .contentShape(Circle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if !draggingFab {
-                                draggingFab = true
-                                menuWasOpenAtStart = nav.isRadialMenuPresented
-                                if !nav.isRadialMenuPresented {
-                                    FabHaptics.menuOpen()
-                                    withAnimation(FabMenuMotion.open) {
-                                        nav.isRadialMenuPresented = true
-                                    }
-                                }
-                            }
-
-                            let target = targetKind(for: value.translation)
-                            if target != nav.highlightedCaptureKind {
-                                nav.highlightedCaptureKind = target
-                                if target != nil {
-                                    FabHaptics.selection()
-                                }
-                            }
-                        }
-                        .onEnded { _ in
-                            if let selected = nav.highlightedCaptureKind {
-                                FabHaptics.primaryImpact()
-                                withAnimation(FabMenuMotion.close) {
-                                    nav.openComposer(kind: selected)
-                                }
-                            } else if menuWasOpenAtStart {
-                                FabHaptics.menuClose()
-                                withAnimation(FabMenuMotion.close) {
-                                    nav.dismissRadialMenu()
-                                }
-                            }
-
-                            draggingFab = false
-                            nav.highlightedCaptureKind = nil
-                        }
-                )
-            .accessibilityLabel(nav.isRadialMenuPresented ? "Close quick capture menu" : "Open quick capture menu")
-            // Center the FAB on the white/brown seam.
-            .offset(y: -(fabSize / 2))
         }
         .frame(height: 48)
         .background(barBackground.ignoresSafeArea(edges: .bottom))
@@ -235,83 +217,109 @@ private struct BottomNavigationBar: View {
         .accessibilityLabel(section.label)
     }
 
+    private var fab: some View {
+        borderedSymbol(nav.isRadialMenuPresented ? "xmark" : "bolt.fill")
+            .frame(width: fabSize, height: fabSize)
+            .background(Color.understoodCrimson)
+            .clipShape(Circle())
+            .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !draggingFab {
+                            draggingFab = true
+                            menuWasOpenAtStart = nav.isRadialMenuPresented
+                            if !nav.isRadialMenuPresented {
+                                FabHaptics.menuOpen()
+                                withAnimation(FabMenuMotion.open) {
+                                    nav.isRadialMenuPresented = true
+                                }
+                            }
+                        }
+
+                        let target = targetKind(for: value.translation)
+                        if target != nav.highlightedCaptureKind {
+                            nav.highlightedCaptureKind = target
+                            if target != nil {
+                                FabHaptics.selection()
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        if let selected = nav.highlightedCaptureKind {
+                            FabHaptics.primaryImpact()
+                            withAnimation(FabMenuMotion.close) {
+                                nav.dismissRadialMenu()
+                            }
+                            onSelectKind(selected)
+                        } else if menuWasOpenAtStart {
+                            onCloseMenu()
+                        }
+
+                        draggingFab = false
+                        nav.highlightedCaptureKind = nil
+                    }
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(nav.isRadialMenuPresented ? "Close menu" : "New entry")
+            .accessibilityIdentifier("chargeFab")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    private func borderedSymbol(_ name: String) -> some View {
+        ZStack {
+            Image(systemName: name)
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(.black)
+            Image(systemName: name)
+                .font(.system(size: 25, weight: .bold))
+                .foregroundStyle(.white)
+        }
+    }
+
+    private func fabOption(_ kind: AppNavigationState.CaptureKind, icon: String) -> some View {
+        let active = nav.highlightedCaptureKind == kind
+        return Button {
+            FabHaptics.primaryImpact()
+            withAnimation(FabMenuMotion.close) {
+                nav.dismissRadialMenu()
+            }
+            onSelectKind(kind)
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(active ? Color.understoodCrimson : Color.recallNearBlack, in: Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(active ? 0.9 : 0.15), lineWidth: 1.5)
+                    )
+                    .scaleEffect(active ? 1.15 : 1)
+                Text(kind.label)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Color.understoodCrimson)
+            }
+            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+        }
+        .buttonStyle(.plain)
+    }
+
     private func targetKind(for translation: CGSize) -> AppNavigationState.CaptureKind? {
         guard hypot(translation.width, translation.height) > 30 else { return nil }
         let angle = atan2(-translation.height, translation.width) * 180 / .pi
-        if angle >= 45 && angle < 135 { return .action }     // up
-        if angle >= -45 && angle < 45 { return .event }      // right
-        if angle >= 135 || angle < -135 { return .reminder } // left
+        if angle >= 45 && angle < 135 { return .action }
+        if angle >= -45 && angle < 45 { return .event }
+        if angle >= 135 || angle < -135 { return .reminder }
         return nil
     }
 }
 
-private struct RadialFabMenu: View {
-    let isPresented: Bool
-    let highlightedKind: AppNavigationState.CaptureKind?
-    let onDismiss: () -> Void
-    let onSelect: (AppNavigationState.CaptureKind) -> Void
-
-    var body: some View {
-        ZStack {
-            if isPresented {
-                Color.black.opacity(0.18)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        FabHaptics.menuClose()
-                        withAnimation(FabMenuMotion.close) {
-                            onDismiss()
-                        }
-                    }
-                    .transition(.opacity)
-
-                ZStack {
-                    radialButton(kind: .reminder, icon: "bell.fill", x: -118, y: 0)
-                    radialButton(kind: .action, icon: "bolt.fill", x: 0, y: -118)
-                    radialButton(kind: .event, icon: "calendar", x: 118, y: 0)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                // Anchor the radial hub to the FAB center so swipe directions are cardinal.
-                .padding(.bottom, 48)
-                .transition(.scale(scale: 0.78, anchor: .bottom).combined(with: .opacity))
-            }
-        }
-    }
-
-    private func radialButton(
-        kind: AppNavigationState.CaptureKind,
-        icon: String,
-        x: CGFloat,
-        y: CGFloat
-    ) -> some View {
-        let isHighlighted = highlightedKind == kind
-        return Button {
-            FabHaptics.primaryImpact()
-            withAnimation(FabMenuMotion.close) {
-                onSelect(kind)
-            }
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: 28, weight: .heavy))
-                .foregroundStyle(.white)
-                .frame(width: 66, height: 66)
-                .background(Color.understoodCrimson, in: Circle())
-                .overlay(
-                    Circle()
-                        .stroke(.white.opacity(isHighlighted ? 0.95 : 0.35), lineWidth: isHighlighted ? 3 : 1.5)
-                )
-                .scaleEffect(isHighlighted ? 1.14 : 1.0)
-                .shadow(color: Color.black.opacity(0.22), radius: 12, y: 8)
-        }
-        .buttonStyle(.plain)
-        .offset(x: x, y: y)
-        .accessibilityLabel(kind.rawValue.capitalized)
-    }
-}
-
 private enum FabMenuMotion {
-    // Snappier reveal when opening, smoother collapse when closing.
-    static let open = Animation.spring(response: 0.24, dampingFraction: 0.76)
-    static let close = Animation.spring(response: 0.42, dampingFraction: 0.82)
+    static let open = Animation.spring(response: 0.34, dampingFraction: 0.72)
+    static let close = Animation.spring(response: 0.3, dampingFraction: 0.8)
 }
 
 private enum FabHaptics {
@@ -341,36 +349,5 @@ private enum FabHaptics {
         let generator = UISelectionFeedbackGenerator()
         generator.prepare()
         generator.selectionChanged()
-    }
-}
-
-private struct AppMenuButton: View {
-    @Environment(AppNavigationState.self) private var nav
-
-    var body: some View {
-        VStack {
-            HStack {
-                Spacer()
-
-                Button {
-                    Haptics.light()
-                    nav.showMenu = true
-                } label: {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Color.black.opacity(0.78))
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.16), radius: 10, x: 0, y: 4)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open menu")
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-
-            Spacer()
-        }
     }
 }

@@ -628,6 +628,24 @@ class SupabaseService {
             .execute()
         print("SupabaseService: updated images for entry \(entryId) with \(validImages.count) image(s)")
     }
+
+    private static let reminderImagesBucket = "reminder-images"
+
+    func uploadReminderImage(data: Data, path: String) async throws {
+        try await ensureAuthenticatedSession()
+        try await client.storage
+            .from(Self.reminderImagesBucket)
+            .upload(
+                path,
+                data: data,
+                options: FileOptions(contentType: "image/jpeg", upsert: true)
+            )
+    }
+
+    func downloadReminderImage(path: String) async throws -> Data {
+        try await ensureAuthenticatedSession()
+        return try await client.storage.from(Self.reminderImagesBucket).download(path: path)
+    }
 }
 
 // MARK: - Insert/Update Payloads

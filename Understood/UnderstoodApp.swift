@@ -13,6 +13,7 @@ import SwiftUI
 struct UnderstoodApp: App {
     @State private var supabase = SupabaseService.shared
     @State private var nav = AppNavigationState()
+    @StateObject private var reminderStore = ReminderStore()
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +23,10 @@ struct UnderstoodApp: App {
                 } else if supabase.isAuthenticated {
                     MainTabView()
                         .environment(nav)
+                        .environmentObject(reminderStore)
+                        .task {
+                            await reminderStore.bootstrap()
+                        }
                 } else {
                     LoginView()
                 }

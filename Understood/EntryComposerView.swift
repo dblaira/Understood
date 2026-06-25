@@ -1,253 +1,6 @@
 import SwiftUI
 import PhotosUI
 import UIKit
-import CoreLocation
-import Combine
-import Auth
-
-enum EntryComposerKind: String, CaseIterable, Identifiable {
-    case reminder
-    case action
-    case event
-
-    var id: String { rawValue }
-}
-
-private enum Priority: String, Codable, CaseIterable, Identifiable {
-    case none, low, medium, high
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .none: return "None"
-        case .low: return "Low"
-        case .medium: return "Medium"
-        case .high: return "High"
-        }
-    }
-    var marks: String {
-        switch self {
-        case .none: return ""
-        case .low: return "!"
-        case .medium: return "!!"
-        case .high: return "!!!"
-        }
-    }
-}
-
-private enum RepeatRule: String, Codable, CaseIterable, Identifiable {
-    case none, daily, weekdays, weekly, monthly, yearly
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .none: return "Never"
-        case .daily: return "Daily"
-        case .weekdays: return "Weekdays"
-        case .weekly: return "Weekly"
-        case .monthly: return "Monthly"
-        case .yearly: return "Yearly"
-        }
-    }
-}
-
-private enum EarlyReminder: String, Codable, CaseIterable, Identifiable {
-    case none
-    case m5 = "5m"
-    case m10 = "10m"
-    case m30 = "30m"
-    case h1 = "1h"
-    case d1 = "1d"
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .none: return "None"
-        case .m5: return "5 minutes before"
-        case .m10: return "10 minutes before"
-        case .m30: return "30 minutes before"
-        case .h1: return "1 hour before"
-        case .d1: return "1 day before"
-        }
-    }
-}
-
-private enum ReminderStatus: String, Codable { case active, completed, deleted }
-
-private enum ReminderKind: String, Codable, CaseIterable, Identifiable {
-    case reminder, action, event
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .reminder: return "Reminder"
-        case .action: return "Action"
-        case .event: return "Event"
-        }
-    }
-}
-
-private enum Effort: String, Codable, CaseIterable, Identifiable {
-    case none, m5, m15, m30, h1, h2plus
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .none: return "—"
-        case .m5: return "5m"
-        case .m15: return "15m"
-        case .m30: return "30m"
-        case .h1: return "1h"
-        case .h2plus: return "2h+"
-        }
-    }
-}
-
-private enum Energy: String, Codable, CaseIterable, Identifiable {
-    case none, low, medium, high
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .none: return "—"
-        case .low: return "Low"
-        case .medium: return "Med"
-        case .high: return "High"
-        }
-    }
-}
-
-private enum SuccessStep: String, Codable, CaseIterable, Identifiable {
-    case none, context, circle, closeGap, chooseSuccess, codePattern, killSwitch, clearSign, compound
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .none: return "None"
-        case .context: return "Context"
-        case .circle: return "Circle"
-        case .closeGap: return "Close the Gap"
-        case .chooseSuccess: return "Choose Success"
-        case .codePattern: return "Code the Pattern"
-        case .killSwitch: return "Create Kill Switch"
-        case .clearSign: return "Clear Sign of Success"
-        case .compound: return "Compound"
-        }
-    }
-}
-
-private struct Subtask: Identifiable, Codable, Equatable, Hashable {
-    var id: UUID = UUID()
-    var title: String = ""
-    var done: Bool = false
-}
-
-private struct Reminder: Identifiable, Codable, Equatable {
-    var id: UUID = UUID()
-    var kind: ReminderKind = .reminder
-    var title: String = ""
-    var notes: String = ""
-    var url: String = ""
-    var imageLocalPath: String? = nil
-    var dueDate: Date? = nil
-    var dueTime: Date? = nil
-    var endTime: Date? = nil
-    var urgent: Bool = false
-    var repeatRule: RepeatRule = .none
-    var earlyReminder: EarlyReminder = .none
-    var listName: String = ""
-    var flag: Bool = false
-    var priority: Priority = .none
-    var outcome: String = ""
-    var effort: Effort = .none
-    var energy: Energy = .none
-    var context: SuccessStep = .none
-    var deferDate: Date? = nil
-    var waitingOn: String = ""
-    var locationName: String = ""
-    var whenMessagingPerson: String = ""
-    var seededFromTemplateID: String? = nil
-    var pinned: Bool = false
-    var upNextOrder: Int? = nil
-    var tags: [String] = []
-    var subtasks: [Subtask] = []
-    var status: ReminderStatus = .active
-    var createdAt: Date = Date()
-    var updatedAt: Date = Date()
-    var completedAt: Date? = nil
-    var needsSync: Bool = false
-}
-
-private enum Brand {
-    static let crimson = Color(red: 0xDC / 255, green: 0x14 / 255, blue: 0x3C / 255)
-    static let card = Color(red: 0xF3 / 255, green: 0xEA / 255, blue: 0xD5 / 255)
-    static func serif(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
-        .system(size: size, weight: weight, design: .serif)
-    }
-}
-
-private enum LocalImageStore {
-    private static var dir: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("reminder-images", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base
-    }
-
-    static func save(_ image: UIImage) -> String? {
-        guard let data = image.jpegData(compressionQuality: 0.8) else { return nil }
-        let name = UUID().uuidString + ".jpg"
-        do { try data.write(to: dir.appendingPathComponent(name), options: .atomic); return name }
-        catch { return nil }
-    }
-
-    static func load(_ name: String?) -> UIImage? {
-        guard let name else { return nil }
-        return UIImage(contentsOfFile: dir.appendingPathComponent(name).path)
-    }
-
-    static func data(_ name: String?) -> Data? {
-        guard let name else { return nil }
-        return try? Data(contentsOf: dir.appendingPathComponent(name))
-    }
-}
-
-@MainActor
-private final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
-    @Published var isResolving = false
-    private let manager = CLLocationManager()
-    private var continuation: CheckedContinuation<String?, Never>?
-
-    override init() {
-        super.init()
-        manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-    }
-
-    func currentPlaceName() async -> String? {
-        if continuation != nil { return nil }
-        isResolving = true
-        if manager.authorizationStatus == .notDetermined {
-            manager.requestWhenInUseAuthorization()
-        }
-        return await withCheckedContinuation { cont in
-            self.continuation = cont
-            self.manager.requestLocation()
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.first else { Task { @MainActor in self.finish(nil) }; return }
-        CLGeocoder().reverseGeocodeLocation(loc) { placemarks, _ in
-            let p = placemarks?.first
-            let name = [p?.name, p?.subLocality, p?.locality].compactMap { $0 }.first
-            Task { @MainActor in self.finish(name) }
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task { @MainActor in self.finish(nil) }
-    }
-
-    private func finish(_ value: String?) {
-        isResolving = false
-        continuation?.resume(returning: value)
-        continuation = nil
-    }
-}
 
 /// The entry form. One screen, three faces: the type selector at the top swaps the field set —
 /// Reminder (timed nudge), Action (broad GTD-style to-do), or Event (time block). White page,
@@ -256,8 +9,9 @@ struct EntryComposerView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var location = LocationProvider()
 
-    private let existingTags: [String]
-    private var onSave: (Reminder) -> Void
+    let existing: Reminder?
+    let existingTags: [String]
+    var onSave: (Reminder) -> Void
 
     @State private var r: Reminder
     @State private var hasDate: Bool
@@ -277,20 +31,12 @@ struct EntryComposerView: View {
 
     private let listChoices = ["Learning", "Leverage", "Delegation", "Inspiration", "Risk", "Health"]
 
-    init(initialKind: EntryComposerKind = .reminder, onSaved: (() -> Void)? = nil) {
-        self.existingTags = []
-        self.onSave = { reminder in
-            Task { await EntryComposerPersistence.persist(reminder: reminder, onSaved: onSaved) }
-        }
-        var base = Reminder()
-        switch initialKind {
-        case .reminder:
-            base.kind = .reminder
-        case .action:
-            base.kind = .action
-        case .event:
-            base.kind = .event
-        }
+    init(initialKind: ReminderKind = .reminder, existing: Reminder?, existingTags: [String] = [], onSave: @escaping (Reminder) -> Void) {
+        self.existing = existing
+        self.existingTags = existingTags
+        self.onSave = onSave
+        var base = existing ?? Reminder()
+        if existing == nil { base.kind = initialKind }
         _r = State(initialValue: base)
         _hasDate = State(initialValue: base.dueDate != nil)
         _hasTime = State(initialValue: base.dueTime != nil)
@@ -312,7 +58,7 @@ struct EntryComposerView: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                .listRowBackground(Brand.card)
+                .listRowBackground(RecallFormBrand.card)
 
                 switch r.kind {
                 case .reminder: reminderSections
@@ -322,7 +68,9 @@ struct EntryComposerView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Color.white.ignoresSafeArea())
-            .tint(Brand.crimson)
+            .tint(RecallFormBrand.crimson)
+            // Header mirrors the Title as you type — the type name until the first character, then
+            // the live title at full size. Compact icon buttons leave it more room.
             .navigationTitle(r.title.trimmingCharacters(in: .whitespaces).isEmpty ? r.kind.label : r.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -344,19 +92,21 @@ struct EntryComposerView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.light, for: .navigationBar)
             .onChange(of: photoItem) { _, item in loadPhoto(item) }
+            // Auto-save: if the form is swiped away (not via Cancel) and has content, keep it.
             .onDisappear { autosaveIfNeeded() }
         }
         .overlay { if showSaved { savedToast } }
         .preferredColorScheme(.light)
     }
 
+    /// Brief confirmation shown when the Save button is tapped (not on swipe-to-save).
     private var savedToast: some View {
         ZStack {
             Color.black.opacity(0.12).ignoresSafeArea()
             VStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 46)).foregroundStyle(Brand.crimson)
-                Text("Locked In").font(Brand.serif(30)).foregroundStyle(.black)
+                    .font(.system(size: 46)).foregroundStyle(RecallFormBrand.crimson)
+                Text("Locked In").font(RecallFormBrand.serif(30)).foregroundStyle(.black)
             }
             .padding(.horizontal, 40).padding(.vertical, 30)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 22))
@@ -365,14 +115,17 @@ struct EntryComposerView: View {
         .transition(.opacity)
     }
 
+    // MARK: - Reminder (timed nudge)
+
     @ViewBuilder private var reminderSections: some View {
         Section {
             TextField("Title", text: $r.title)
+                .accessibilityIdentifier("Title")
             TextField("Notes", text: $r.notes, axis: .vertical).lineLimit(1...5)
             urlField("URL")
             imageRow
         } header: { sectionHeader("Details") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
 
         patternSection
 
@@ -383,7 +136,7 @@ struct EntryComposerView: View {
             repeatGroup
             earlyReminderGroup
         } header: { sectionHeader("Date & Time") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
 
         Section {
             listGroup
@@ -392,7 +145,7 @@ struct EntryComposerView: View {
             Toggle(isOn: $r.flag) { Label("Flag", systemImage: "flag") }
             priorityGroup
         } header: { sectionHeader("Organization") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
 
         Section {
             locationRow
@@ -401,16 +154,19 @@ struct EntryComposerView: View {
             Text("Saved with the reminder. Apple limits live Messages integration to its own Reminders app.")
                 .foregroundStyle(.black.opacity(0.45))
         }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
     }
+
+    // MARK: - Action (broad GTD-style)
 
     @ViewBuilder private var actionSections: some View {
         Section {
-            TextField("What will you do?", text: $r.title)
-            TextField("Outcome — what does done look like?", text: $r.outcome, axis: .vertical).lineLimit(1...3)
+            TextField("What do I want?", text: $r.title)
+            TextField("When I am...I like to", text: $r.whenIAm, axis: .vertical).lineLimit(1...3)
+            TextField("Done looks like...", text: $r.outcome, axis: .vertical).lineLimit(1...3)
             subtasksEditor("Steps", addLabel: "Add Step")
-        } header: { sectionHeader("Do") }
-        .listRowBackground(Brand.card)
+        } header: { sectionHeader("Delegate") }
+        .listRowBackground(RecallFormBrand.card)
 
         patternSection
 
@@ -419,7 +175,7 @@ struct EntryComposerView: View {
             effortGroup
             energyGroup
         } header: { sectionHeader("Choose") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
 
         Section {
             dateGroup("Due", icon: "calendar", isOn: $hasDate, date: $date)
@@ -427,21 +183,21 @@ struct EntryComposerView: View {
             repeatGroup
             timeGroup("Nudge", icon: "bell", isOn: $hasTime, time: $time)
         } header: { sectionHeader("Schedule") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
 
         Section {
             listGroup
             Toggle(isOn: $r.flag) { Label("Flag", systemImage: "flag") }
             tagsEditor
         } header: { sectionHeader("Organize") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
 
         Section {
             TextField("Notes", text: $r.notes, axis: .vertical).lineLimit(1...5)
             urlField("Link")
             imageRow
         } header: { sectionHeader("Details") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
 
         Section {
             locationRow
@@ -450,8 +206,10 @@ struct EntryComposerView: View {
                 TextField("Waiting on / delegate to", text: $r.waitingOn)
             }
         } header: { sectionHeader("Place / People") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
     }
+
+    // MARK: - Event (time block)
 
     @ViewBuilder private var eventSections: some View {
         Section {
@@ -460,7 +218,7 @@ struct EntryComposerView: View {
             locationRow
             tagsEditor
         } header: { sectionHeader("Event") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
 
         patternSection
 
@@ -470,8 +228,10 @@ struct EntryComposerView: View {
             timeGroup("Ends", icon: "clock.badge.checkmark", isOn: $hasEnd, time: $endTime)
             repeatGroup
         } header: { sectionHeader("When") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
     }
+
+    // MARK: - Reusable field groups
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
@@ -493,7 +253,7 @@ struct EntryComposerView: View {
                     .frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 8))
             }
             PhotosPicker(selection: $photoItem, matching: .images) {
-                Text(pickedImage == nil ? "Add" : "Change").foregroundStyle(Brand.crimson)
+                Text(pickedImage == nil ? "Add" : "Change").foregroundStyle(RecallFormBrand.crimson)
             }
         }
     }
@@ -506,7 +266,7 @@ struct EntryComposerView: View {
                 Task { if let name = await location.currentPlaceName() { r.locationName = name } }
             } label: {
                 if location.isResolving { ProgressView() } else { Image(systemName: "location") }
-            }.foregroundStyle(Brand.crimson)
+            }.foregroundStyle(RecallFormBrand.crimson)
         }
     }
 
@@ -533,6 +293,7 @@ struct EntryComposerView: View {
         }
     }
 
+    /// A single clean dropdown row for a CaseIterable enum selector.
     private func enumMenu<T: CaseIterable & Identifiable & Hashable>(
         _ title: String, icon: String, selection: Binding<T>, label: @escaping (T) -> String
     ) -> some View where T.AllCases: RandomAccessCollection {
@@ -542,36 +303,31 @@ struct EntryComposerView: View {
             Label(title, systemImage: icon)
         }
         .pickerStyle(.menu)
-        .tint(Brand.crimson)
+        .tint(RecallFormBrand.crimson)
     }
 
     private var repeatGroup: some View {
         enumMenu("Repeat", icon: "repeat", selection: $r.repeatRule) { $0.label }
     }
-
     private var earlyReminderGroup: some View {
         enumMenu("Early Reminder", icon: "bell", selection: $r.earlyReminder) { $0.label }
     }
-
     private var priorityGroup: some View {
         enumMenu("Priority", icon: "exclamationmark.3", selection: $r.priority) { $0.label }
     }
-
     private var effortGroup: some View {
         enumMenu("Effort", icon: "timer", selection: $r.effort) { $0.label }
     }
-
     private var energyGroup: some View {
         enumMenu("Energy", icon: "bolt", selection: $r.energy) { $0.label }
     }
-
+    /// Adam's 8-step success architecture — its own cream section, a clean dropdown.
     private var patternSection: some View {
         Section {
             enumMenu("Pattern", icon: "list.number", selection: $r.context) { $0.label }
         } header: { sectionHeader("Pattern") }
-        .listRowBackground(Brand.card)
+        .listRowBackground(RecallFormBrand.card)
     }
-
     private var listGroup: some View {
         Picker(selection: $r.listName) {
             Text("None").tag("")
@@ -580,7 +336,7 @@ struct EntryComposerView: View {
             Label("Lift", systemImage: "sparkles")
         }
         .pickerStyle(.menu)
-        .tint(Brand.crimson)
+        .tint(RecallFormBrand.crimson)
     }
 
     private var tagsEditor: some View {
@@ -591,7 +347,7 @@ struct EntryComposerView: View {
                     .onSubmit(addTag)
                     .onChange(of: tagDraft) { _, value in if value.contains(",") { addTag() } }
                 Button("Add", action: addTag)
-                    .foregroundStyle(Brand.crimson)
+                    .foregroundStyle(RecallFormBrand.crimson)
                     .disabled(tagDraft.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             if !suggestedTags.isEmpty {
@@ -607,7 +363,7 @@ struct EntryComposerView: View {
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 }
-                .tint(Brand.crimson)
+                .tint(RecallFormBrand.crimson)
             }
             if !r.tags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -641,10 +397,12 @@ struct EntryComposerView: View {
                 }
             }
             Button { r.subtasks.append(Subtask()) } label: {
-                Text(addLabel).foregroundStyle(Brand.crimson)
+                Text(addLabel).foregroundStyle(RecallFormBrand.crimson)
             }
         }
     }
+
+    // MARK: - Actions
 
     private func addTag() {
         let t = tagDraft
@@ -655,6 +413,7 @@ struct EntryComposerView: View {
         tagDraft = ""
     }
 
+    /// Previously-used tags not already on this item (most-used first, supplied by the caller).
     private var suggestedTags: [String] { existingTags.filter { !r.tags.contains($0) } }
 
     private func addExistingTag(_ tag: String) {
@@ -678,6 +437,7 @@ struct EntryComposerView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { dismiss() }
     }
 
+    /// Save when the sheet is dismissed by swiping (not Cancel) and the user actually entered something.
     private func autosaveIfNeeded() {
         guard !committed, !cancelled, hasContent else { return }
         persist()
@@ -685,7 +445,7 @@ struct EntryComposerView: View {
 
     private var hasContent: Bool {
         if !r.title.trimmingCharacters(in: .whitespaces).isEmpty { return true }
-        if !r.notes.isEmpty || !r.outcome.isEmpty || !r.url.isEmpty { return true }
+        if !r.notes.isEmpty || !r.outcome.isEmpty || !r.whenIAm.isEmpty || !r.url.isEmpty { return true }
         if !r.locationName.isEmpty || !r.waitingOn.isEmpty { return true }
         if !r.tags.isEmpty { return true }
         if r.subtasks.contains(where: { !$0.title.trimmingCharacters(in: .whitespaces).isEmpty }) { return true }
@@ -705,158 +465,6 @@ struct EntryComposerView: View {
         r.subtasks.removeAll { $0.title.trimmingCharacters(in: .whitespaces).isEmpty }
         if r.title.trimmingCharacters(in: .whitespaces).isEmpty { r.title = "New \(r.kind.label)" }
         onSave(r)
-    }
-}
-
-private enum EntryComposerPersistence {
-    static let supabase = SupabaseService.shared
-
-    static func persist(reminder: Reminder, onSaved: (() -> Void)?) async {
-        do {
-            try await saveToUnderstood(reminder)
-            if let onSaved {
-                await MainActor.run { onSaved() }
-            }
-        } catch {
-            print("EntryComposer persistence failed: \(error.localizedDescription)")
-        }
-    }
-
-    private static func saveToUnderstood(_ reminder: Reminder) async throws {
-        let headline = reminder.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveHeadline = headline.isEmpty ? "New \(reminder.kind.label)" : headline
-        let entryType = reminder.kind == .action ? "action" : "story"
-        let nowISO = ISO8601DateFormatter().string(from: Date())
-        let dueDateValue = reminder.dueDate.map { ISO8601DateFormatter().string(from: $0) }
-
-        let metadata = EntryMetadata(
-            timestamp: nowISO,
-            dayOfWeek: nil,
-            timeOfDay: nil,
-            device: "mobile",
-            patternStep: reminder.context == .none ? nil : reminder.context.label
-        )
-
-        let content = composeBody(from: reminder)
-
-        let entry = try await supabase.createEntry(
-            content: content,
-            category: "Insight",
-            entryType: entryType,
-            metadata: metadata
-        )
-
-        let payload = EntryUpdatePayload(
-            headline: effectiveHeadline,
-            subheading: reminder.kind == .action ? reminder.outcome : "",
-            content: content,
-            category: "Insight",
-            entryType: entryType,
-            dueDate: dueDateValue,
-            completedAt: nil,
-            updatedAt: nowISO,
-            shouldClearDueDate: true,
-            shouldClearCompletedAt: true
-        )
-        try await supabase.updateEntry(id: entry.id, payload: payload)
-
-        if let imageData = LocalImageStore.data(reminder.imageLocalPath),
-           let image = UIImage(data: imageData),
-           let userId = supabase.currentSession?.user.id.uuidString {
-            let url = try await supabase.uploadEntryImage(
-                image: image.uprightOrientation(),
-                userId: userId,
-                entryId: entry.id,
-                index: 0
-            )
-            try await supabase.updateEntryImages(
-                entryId: entry.id,
-                images: [EntryImage(url: url, isPoster: true, order: 0)]
-            )
-        }
-    }
-
-    private static func composeBody(from reminder: Reminder) -> String {
-        var sections: [String] = []
-
-        sections.append("Kind: \(reminder.kind.label)")
-
-        if !reminder.outcome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            sections.append("Outcome: \(reminder.outcome.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
-
-        if !reminder.subtasks.isEmpty {
-            let steps = reminder.subtasks
-                .map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .map { "- \($0)" }
-                .joined(separator: "\n")
-            if !steps.isEmpty { sections.append("Steps:\n\(steps)") }
-        }
-
-        if let dueDate = reminder.dueDate {
-            let fmt = DateFormatter()
-            fmt.dateStyle = .medium
-            fmt.timeStyle = .none
-            sections.append("Due: \(fmt.string(from: dueDate))")
-        }
-
-        if let dueTime = reminder.dueTime {
-            let fmt = DateFormatter()
-            fmt.dateStyle = .none
-            fmt.timeStyle = .short
-            sections.append("Time: \(fmt.string(from: dueTime))")
-        }
-
-        if let deferDate = reminder.deferDate {
-            let fmt = DateFormatter()
-            fmt.dateStyle = .medium
-            fmt.timeStyle = .none
-            sections.append("Start / defer: \(fmt.string(from: deferDate))")
-        }
-
-        if let endTime = reminder.endTime {
-            let fmt = DateFormatter()
-            fmt.dateStyle = .none
-            fmt.timeStyle = .short
-            sections.append("Ends: \(fmt.string(from: endTime))")
-        }
-
-        sections.append("Repeat: \(reminder.repeatRule.label)")
-        sections.append("Early reminder: \(reminder.earlyReminder.label)")
-        sections.append("Urgent: \(reminder.urgent ? "Yes" : "No")")
-        sections.append("Lift: \(reminder.listName.isEmpty ? "None" : reminder.listName)")
-        sections.append("Priority: \(reminder.priority.label)")
-        sections.append("Effort: \(reminder.effort.label)")
-        sections.append("Energy: \(reminder.energy.label)")
-        sections.append("Pattern: \(reminder.context.label)")
-        sections.append("Flag: \(reminder.flag ? "Yes" : "No")")
-
-        if !reminder.tags.isEmpty {
-            sections.append("Tags: \(reminder.tags.joined(separator: ", "))")
-        }
-
-        if !reminder.locationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            sections.append("Location: \(reminder.locationName.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
-
-        if !reminder.whenMessagingPerson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            sections.append("When messaging: \(reminder.whenMessagingPerson.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
-
-        if !reminder.waitingOn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            sections.append("Waiting on / delegate: \(reminder.waitingOn.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
-
-        if !reminder.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            sections.append("Link: \(reminder.url.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
-
-        if !reminder.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            sections.append("Notes:\n\(reminder.notes.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
-
-        return sections.joined(separator: "\n\n")
     }
 }
 
@@ -907,6 +515,15 @@ struct SaveDiskIcon: View {
     }
 }
 
+private enum RecallFormBrand {
+    static let crimson = Color.understoodCrimson
+    static let card = Color(red: 0xF3 / 255, green: 0xEA / 255, blue: 0xD5 / 255)
+
+    static func serif(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
+        Font.custom("Bodoni 72 Oldstyle", size: size).weight(weight)
+    }
+}
+
 #Preview {
-    EntryComposerView()
+    EntryComposerView(existing: nil) { _ in }
 }

@@ -52,6 +52,14 @@ struct FullScreenMenuView: View {
                             }
                         }
 
+                        sectionButton(
+                            label: "BELIEFS",
+                            isActive: nav.currentSection == "note"
+                        ) {
+                            Haptics.light()
+                            nav.navigate(to: "note")
+                        }
+
                     }
                     .padding(.horizontal, 24)
 

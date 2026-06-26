@@ -31,3 +31,21 @@ Do not change signing, certificates, provisioning, or App Store submission setti
 This repo includes `ci_scripts/ci_post_clone.sh` for Xcode Cloud. It verifies that `Understood.xcodeproj` and the shared `Understood` scheme are present before Xcode Cloud starts its build.
 
 Apple-side workflow configuration still lives in Xcode/App Store Connect.
+
+## TestFlight Readiness
+
+Run:
+
+```sh
+./scripts/agent-testflight-readiness.sh
+```
+
+This checks the shared scheme, bundle id, signing team, and whether App Store Connect API environment variables are present for CLI upload/status work.
+
+Current known boundary:
+
+```text
+DEVELOPMENT_TEAM = 7FKUS5M5QS
+```
+
+That appears to be the same Personal Team used by the suite's local iOS builds. Personal Team builds are useful for local/device development, but TestFlight requires the app to be under an Apple Developer Program/App Store Connect team.

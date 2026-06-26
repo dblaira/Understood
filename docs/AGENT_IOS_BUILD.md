@@ -25,3 +25,9 @@ IOS_DESTINATION="platform=iOS Simulator,name=iPhone 17 Pro" ./scripts/agent-ios-
 ```
 
 Do not change signing, certificates, provisioning, or App Store submission settings from an agent run unless Adam explicitly asks.
+
+## Xcode Cloud
+
+This repo includes `ci_scripts/ci_post_clone.sh` for Xcode Cloud. It verifies that `Understood.xcodeproj` and the shared `Understood` scheme are present before Xcode Cloud starts its build.
+
+Apple-side workflow configuration still lives in Xcode/App Store Connect.

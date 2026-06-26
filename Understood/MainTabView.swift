@@ -31,13 +31,9 @@ struct MainTabView: View {
                     case "connection":
                         RemindersHomeView(onOpen: openReminder)
                     case "extraction":
-                        ExtractionsView()
+                        RecallActionsHomeView(onOpen: openReminder)
                     case "timeline":
-                        placeholderView(
-                            icon: "chart.xyaxis.line",
-                            title: "Patterns",
-                            subtitle: "Deterministic readouts and inference layers will live here."
-                        )
+                        RecallCalendarView(onOpen: openReminder)
                     case "note":
                         BeliefLibraryView(patternFilter: nav.currentFilter)
                     case "action":

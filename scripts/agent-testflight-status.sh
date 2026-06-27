@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/load-app-store-connect-env.sh"
+load_app_store_connect_env
+
 PROJECT="$ROOT_DIR/Understood.xcodeproj"
 SCHEME="${UNDERSTOOD_SCHEME:-Understood}"
 DELIVERY_ID="${APP_STORE_CONNECT_DELIVERY_ID:-}"

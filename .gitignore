@@ -27,3 +27,8 @@ Pods/
 .DS_Store
 *.swp
 *~
+
+# Local credentials
+.env
+.env.*
+*.p8

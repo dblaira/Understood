@@ -53,8 +53,8 @@
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "SUPABASE_PUBLISHABLE_KEY"
-            value = "sb_publishable_NKL75dKkZ_n-KaNFd7nxrw_hN7rzW3W"
+            key = "OS_ACTIVITY_MODE"
+            value = "disable"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

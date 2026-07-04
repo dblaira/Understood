@@ -27,9 +27,10 @@ class SupabaseService {
 
     private init() {
         let supabaseURL = URL(string: "https://wqdacfrzurhpsiuvzxwo.supabase.co")!
-        guard let supabaseKey = ProcessInfo.processInfo.environment["SUPABASE_PUBLISHABLE_KEY"], !supabaseKey.isEmpty else {
-            fatalError("SUPABASE_PUBLISHABLE_KEY must be set in the app runtime environment.")
-        }
+        // Publishable key: safe to embed in the client (public by design, guarded by RLS).
+        // Must be hardcoded — scheme environment variables are only injected when launched
+        // from Xcode, so a standalone/TestFlight/App Store launch would otherwise crash.
+        let supabaseKey = "sb_publishable_NKL75dKkZ_n-KaNFd7nxrw_hN7rzW3W"
 
         self.client = SupabaseClient(
             supabaseURL: supabaseURL,

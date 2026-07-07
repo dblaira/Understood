@@ -58,6 +58,21 @@ struct MainTabView: View {
                 onCloseMenu: closeFabMenu
             )
         }
+        // The full-screen menu (sections, Beliefs, pattern filters, Settings) had no way to open —
+        // nothing ever set showMenu. Same affordance as SAVY: dark circle, top-right, all tabs.
+        .overlay(alignment: .topTrailing) {
+            Button {
+                Haptics.light()
+                nav.showMenu = true
+            } label: {
+                HeaderIconButton(systemName: "line.3.horizontal")
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 16)
+            .padding(.top, 8)
+            .accessibilityLabel("Menu")
+            .accessibilityIdentifier("menuButton")
+        }
         .fullScreenCover(isPresented: $nav.showMenu) {
             FullScreenMenuView(onSignOut: {
                 Task {

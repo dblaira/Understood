@@ -15,10 +15,26 @@ struct UnderstoodApp: App {
     @State private var nav = AppNavigationState()
     @StateObject private var reminderStore = ReminderStore()
 
+    /// DEBUG-only simulator verification door: skips the login gate (local store only, no
+    /// Supabase writes) so UI can be exercised and screenshotted without credentials.
+    /// Compiled out of release builds entirely.
+    private var uiTestBypassAuth: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-uitestBypassAuth")
+        #else
+        return false
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
-                if !supabase.hasCheckedInitialSession {
+                if uiTestBypassAuth {
+                    MainTabView()
+                        .environment(nav)
+                        .environmentObject(reminderStore)
+                        .onAppear { applyUITestLaunchState() }
+                } else if !supabase.hasCheckedInitialSession {
                     LaunchAuthCheckView()
                 } else if supabase.isAuthenticated {
                     MainTabView()
@@ -60,6 +76,25 @@ struct UnderstoodApp: App {
                 }
             }
         }
+    }
+
+    /// Optional launch arguments consumed with the bypass: "-uitestSection <id>" opens a tab,
+    /// "-uitestSeed" plants sample reminders/actions/events in the local store.
+    private func applyUITestLaunchState() {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let idx = args.firstIndex(of: "-uitestSection"), args.indices.contains(idx + 1) {
+            nav.currentSection = args[idx + 1]
+        }
+        if args.contains("-uitestSeed"), reminderStore.reminders.isEmpty {
+            var first = Reminder(); first.kind = .reminder; first.title = "Sim check one"
+            var second = Reminder(); second.kind = .reminder; second.title = "Sim check two"
+            var third = Reminder(); third.kind = .action; third.title = "Sim action"
+            var fourth = Reminder(); fourth.kind = .event; fourth.title = "Sim event today"
+            fourth.dueDate = Date()
+            [first, second, third, fourth].forEach { reminderStore.save($0) }
+        }
+        #endif
     }
 }
 

@@ -68,6 +68,8 @@ final class ReminderStore: ObservableObject {
         guard let index = reminders.firstIndex(where: { $0.id == reminder.id }) else { return }
         var updated = reminders[index]
         updated.pinned.toggle()
+        updated.updatedAt = Date()
+        updated.needsSync = true
         reminders[index] = updated
 
         if updated.pinned {
@@ -83,6 +85,10 @@ final class ReminderStore: ObservableObject {
             unpinned.insert(reminders[index], at: 0)
             applyBlockOrder(unpinned)
         }
+        // The pin flag itself must survive relaunch and reach Supabase even when no block
+        // order changed (applyBlockOrder only saves/syncs rows whose upNextOrder moved).
+        saveCache()
+        syncToRemote(reminders[index])
     }
 
     enum UpNextMoveDirection { case up, down }
@@ -104,13 +110,18 @@ final class ReminderStore: ObservableObject {
         applyBlockOrder(block)
     }
 
+    /// Soft delete — the row keeps its history with `status = .deleted` locally and in Supabase
+    /// (the schema retains all three statuses). Matches Re_Call and SAVY; never hard-delete.
     func delete(_ reminder: Reminder) {
-        reminders.removeAll { $0.id == reminder.id }
+        guard let index = reminders.firstIndex(where: { $0.id == reminder.id }) else { return }
+        var updated = reminders[index]
+        updated.status = .deleted
+        updated.updatedAt = Date()
+        updated.needsSync = true
+        reminders[index] = updated
         NotificationScheduler.cancel(reminder)
         saveCache()
-        Task {
-            try? await repository.delete(id: reminder.id)
-        }
+        syncToRemote(updated)
     }
 
     private func compareUpNext(_ lhs: Reminder, _ rhs: Reminder) -> Bool {

@@ -35,6 +35,16 @@ struct RemindersHomeView: View {
                                 onOpen(reminder)
                             }
                             .contextMenu {
+                                Button {
+                                    store.moveUpNext(reminder, direction: .up)
+                                } label: {
+                                    Label("Move Up", systemImage: "chevron.up")
+                                }
+                                Button {
+                                    store.moveUpNext(reminder, direction: .down)
+                                } label: {
+                                    Label("Move Down", systemImage: "chevron.down")
+                                }
                                 Button(reminder.pinned ? "Unpin" : "Pin") {
                                     store.togglePin(reminder)
                                 }
@@ -128,6 +138,16 @@ struct RecallActionsHomeView: View {
                                 onOpen(action)
                             }
                             .contextMenu {
+                                Button {
+                                    store.moveUpNext(action, direction: .up)
+                                } label: {
+                                    Label("Move Up", systemImage: "chevron.up")
+                                }
+                                Button {
+                                    store.moveUpNext(action, direction: .down)
+                                } label: {
+                                    Label("Move Down", systemImage: "chevron.down")
+                                }
                                 Button(action.pinned ? "Unpin" : "Pin") {
                                     store.togglePin(action)
                                 }
@@ -183,11 +203,13 @@ struct RecallCalendarView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                HStack {
+                HStack(spacing: 10) {
                     Text("Calendar")
                         .font(Typography.connectionHero)
                         .foregroundStyle(.white)
-                    Spacer()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Spacer(minLength: 0)
                     Button("Today") {
                         selected = Date()
                         month = Date()
@@ -197,6 +219,8 @@ struct RecallCalendarView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(Color.white.opacity(0.14), in: Capsule())
+                    monthChevron("chevron.left", delta: -1)
+                    monthChevron("chevron.right", delta: 1)
                 }
                 .padding(.top, 60)
                 .padding(.bottom, 18)
@@ -304,12 +328,48 @@ struct RecallCalendarView: View {
                     .padding(.vertical, 8)
             } else {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, reminder in
-                    ReminderPriorityCard(reminder: reminder, rank: index) {
+                    ReminderPriorityCard(reminder: reminder, rank: index, completed: reminder.status == .completed) {
                         onOpen(reminder)
+                    }
+                    .contextMenu {
+                        if reminder.status == .completed {
+                            Button {
+                                store.uncomplete(reminder)
+                            } label: {
+                                Label("Reopen", systemImage: "arrow.uturn.left")
+                            }
+                        } else {
+                            Button("Mark done") {
+                                store.complete(reminder)
+                            }
+                        }
+                        Button(reminder.pinned ? "Unpin" : "Pin") {
+                            store.togglePin(reminder)
+                        }
+                        Button("Delete", role: .destructive) {
+                            store.delete(reminder)
+                        }
                     }
                 }
             }
         }
+    }
+
+    private func monthChevron(_ icon: String, delta: Int) -> some View {
+        Button {
+            if let shifted = calendar.date(byAdding: .month, value: delta, to: month) {
+                month = shifted
+                selected = shifted
+            }
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(Color.white.opacity(0.12), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(delta < 0 ? "Previous month" : "Next month")
     }
 
     private func reminders(on day: Date) -> [Reminder] {

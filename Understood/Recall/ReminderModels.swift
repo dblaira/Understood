@@ -28,36 +28,6 @@ enum RepeatRule: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum EarlyReminder: String, Codable, CaseIterable, Identifiable {
-    case none
-    case m5 = "5m"
-    case m10 = "10m"
-    case m30 = "30m"
-    case h1 = "1h"
-    case d1 = "1d"
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .none: return "None"
-        case .m5: return "5 minutes before"
-        case .m10: return "10 minutes before"
-        case .m30: return "30 minutes before"
-        case .h1: return "1 hour before"
-        case .d1: return "1 day before"
-        }
-    }
-    var lead: TimeInterval {
-        switch self {
-        case .none: return 0
-        case .m5: return 300
-        case .m10: return 600
-        case .m30: return 1800
-        case .h1: return 3600
-        case .d1: return 86400
-        }
-    }
-}
-
 enum ReminderStatus: String, Codable { case active, completed, deleted }
 
 enum ReminderKind: String, Codable, CaseIterable, Identifiable {
@@ -136,7 +106,6 @@ struct Reminder: Identifiable, Codable, Equatable {
     var endTime: Date? = nil
     var urgent: Bool = false
     var repeatRule: RepeatRule = .none
-    var earlyReminder: EarlyReminder = .none
     var listName: String = ""
     var flag: Bool = false
     var priority: Priority = .none
@@ -148,7 +117,6 @@ struct Reminder: Identifiable, Codable, Equatable {
     var deferDate: Date? = nil
     var waitingOn: String = ""
     var locationName: String = ""
-    var whenMessagingPerson: String = ""
     var seededFromTemplateID: String? = nil
     var pinned: Bool = false
     var upNextOrder: Int? = nil

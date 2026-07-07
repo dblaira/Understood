@@ -20,12 +20,10 @@ private struct ReminderRow: Decodable {
     var due_time: String?
     var urgent: Bool
     var repeat_rule: String
-    var early_reminder: String
     var list_name: String
     var flag: Bool
     var priority: String
     var location_name: String
-    var when_messaging_person: String
     var kind: String
     var end_time: String?
     var when_i_am: String
@@ -54,12 +52,10 @@ private struct ReminderUpsert: Encodable {
     var due_time: String?
     var urgent: Bool
     var repeat_rule: String
-    var early_reminder: String
     var list_name: String
     var flag: Bool
     var priority: String
     var location_name: String
-    var when_messaging_person: String
     var kind: String
     var end_time: String?
     var when_i_am: String
@@ -242,12 +238,10 @@ final class SupabaseReminderRepository: ReminderRepository {
             due_time: reminder.dueTime.map { PG.time.string(from: $0) },
             urgent: reminder.urgent,
             repeat_rule: reminder.repeatRule.rawValue,
-            early_reminder: reminder.earlyReminder.rawValue,
             list_name: reminder.listName,
             flag: reminder.flag,
             priority: reminder.priority.rawValue,
             location_name: reminder.locationName,
-            when_messaging_person: reminder.whenMessagingPerson,
             kind: reminder.kind.rawValue,
             end_time: reminder.endTime.map { PG.time.string(from: $0) },
             when_i_am: reminder.whenIAm,
@@ -275,12 +269,10 @@ final class SupabaseReminderRepository: ReminderRepository {
         reminder.dueTime = row.due_time.flatMap { PG.time.date(from: $0) }
         reminder.urgent = row.urgent
         reminder.repeatRule = RepeatRule(rawValue: row.repeat_rule) ?? .none
-        reminder.earlyReminder = EarlyReminder(rawValue: row.early_reminder) ?? .none
         reminder.listName = row.list_name
         reminder.flag = row.flag
         reminder.priority = Priority(rawValue: row.priority) ?? .none
         reminder.locationName = row.location_name
-        reminder.whenMessagingPerson = row.when_messaging_person
         reminder.kind = ReminderKind(rawValue: row.kind) ?? .reminder
         reminder.endTime = row.end_time.flatMap { PG.time.date(from: $0) }
         reminder.whenIAm = row.when_i_am

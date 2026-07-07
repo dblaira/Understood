@@ -4,8 +4,7 @@ import UserNotifications
 enum NotificationScheduler {
     static func schedule(_ reminder: Reminder) {
         cancel(reminder)
-        guard reminder.status == .active, let base = reminder.fireDate else { return }
-        let fire = base.addingTimeInterval(-reminder.earlyReminder.lead)
+        guard reminder.status == .active, let fire = reminder.fireDate else { return }
 
         Task {
             guard await ensureAuthorized() else { return }

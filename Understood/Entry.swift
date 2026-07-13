@@ -234,6 +234,39 @@ struct Version: Codable, Hashable {
     let content: String
     var headline: String?
     var body: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case title
+        case content
+        case headline
+        case body
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedHeadline = try container.decodeIfPresent(String.self, forKey: .headline)
+        let decodedBody = try container.decodeIfPresent(String.self, forKey: .body)
+
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Version"
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+            ?? decodedHeadline
+            ?? name
+        content = try container.decodeIfPresent(String.self, forKey: .content)
+            ?? decodedBody
+            ?? ""
+        headline = decodedHeadline
+        body = decodedBody
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(title, forKey: .title)
+        try container.encode(content, forKey: .content)
+        try container.encodeIfPresent(headline, forKey: .headline)
+        try container.encodeIfPresent(body, forKey: .body)
+    }
 }
 
 /// Auto-captured context for an entry

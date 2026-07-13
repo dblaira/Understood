@@ -239,7 +239,12 @@ struct ContentView: View {
             featuredEntry = fetchedFeatured
             pinnedEntries = fetchedPinned
             isLoading = false
+        } catch is CancellationError {
+            return
         } catch {
+            #if DEBUG
+            print("Understood entry fetch decoding failure: \(String(reflecting: error))")
+            #endif
             errorMessage = "Could not load entries.\n\(error.localizedDescription)"
             isLoading = false
         }

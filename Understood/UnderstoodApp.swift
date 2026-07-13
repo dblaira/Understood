@@ -40,6 +40,7 @@ struct UnderstoodApp: App {
                     MainTabView()
                         .environment(nav)
                         .environmentObject(reminderStore)
+                        .onAppear { applyUITestLaunchState() }
                         .task {
                             await reminderStore.bootstrap()
                         }

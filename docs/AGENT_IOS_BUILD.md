@@ -10,7 +10,7 @@ What it proves:
 
 1. `Understood` builds for the iOS Simulator.
 2. The command exits non-zero if the build fails.
-3. The project currently exposes no test target, so simulator build is the local gate.
+3. The simulator gate builds the app and runs the committed native UI capture tests.
 
 Default simulator:
 

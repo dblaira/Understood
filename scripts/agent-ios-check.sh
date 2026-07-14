@@ -19,7 +19,6 @@ xcodebuild \
   -configuration Debug \
   -sdk iphonesimulator \
   -destination "$DESTINATION" \
-  build
+  test
 
-echo "Agent iOS check passed: Understood simulator build succeeded."
-echo "Note: this Xcode project currently exposes no test target."
+echo "Agent iOS check passed: Understood simulator build and visible capture tests succeeded."

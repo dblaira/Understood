@@ -11,7 +11,7 @@ final class UnderstoodCaptureUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-uitestBypassAuth"]
+        app.launchArguments = ["-uitestBypassAuth", "-uitestResetStore"]
         app.launch()
     }
 
@@ -26,6 +26,7 @@ final class UnderstoodCaptureUITests: XCTestCase {
         assertEntryVisible(title)
 
         app.terminate()
+        app.launchArguments = ["-uitestBypassAuth"]
         app.launch()
         openSection("Reminders")
         assertEntryVisible(title)
@@ -38,6 +39,7 @@ final class UnderstoodCaptureUITests: XCTestCase {
         assertEntryVisible(title)
 
         app.terminate()
+        app.launchArguments = ["-uitestBypassAuth"]
         app.launch()
         openSection("Actions")
         assertEntryVisible(title)
@@ -46,11 +48,18 @@ final class UnderstoodCaptureUITests: XCTestCase {
     private func capture(title: String, destination: String) {
         let fab = app.buttons["chargeFab"]
         XCTAssertTrue(fab.waitForExistence(timeout: 15), "New entry button missing")
-        let start = fab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let offset = destination == "Action"
-            ? CGVector(dx: 0, dy: -120)
-            : CGVector(dx: -90, dy: -40)
-        start.press(forDuration: 0.05, thenDragTo: start.withOffset(offset))
+        fab.tap()
+        let destinationButton = app.buttons[destination]
+        if destinationButton.waitForExistence(timeout: 3) {
+            destinationButton.tap()
+        } else {
+            // Keep a geometry fallback for older simulator accessibility hosts.
+            let start = fab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let offset = destination == "Action"
+                ? CGVector(dx: 0, dy: -120)
+                : CGVector(dx: -90, dy: -40)
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(offset))
+        }
 
         let titleField = app.textFields["Title"]
         XCTAssertTrue(titleField.waitForExistence(timeout: 10), "Capture form did not open")

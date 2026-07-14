@@ -276,6 +276,16 @@ private struct BottomNavigationBar: View {
             .accessibilityLabel(nav.isRadialMenuPresented ? "Close menu" : "New entry")
             .accessibilityIdentifier("chargeFab")
             .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                if nav.isRadialMenuPresented {
+                    onCloseMenu()
+                } else {
+                    FabHaptics.menuOpen()
+                    withAnimation(FabMenuMotion.open) {
+                        nav.isRadialMenuPresented = true
+                    }
+                }
+            }
     }
 
     private func borderedSymbol(_ name: String) -> some View {

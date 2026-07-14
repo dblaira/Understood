@@ -14,6 +14,10 @@ enum ReminderLocalCache {
         write(data, to: localURL())
     }
 
+    static func reset() {
+        try? FileManager.default.removeItem(at: localURL())
+    }
+
     private static func localURL() -> URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("recall", isDirectory: true)

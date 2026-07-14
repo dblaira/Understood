@@ -10,6 +10,11 @@ final class ReminderStore: ObservableObject {
 
     init(repository: ReminderRepository = SupabaseReminderRepository()) {
         self.repository = repository
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uitestResetStore") {
+            ReminderLocalCache.reset()
+        }
+        #endif
         reminders = ReminderLocalCache.load()
         reminders.forEach(NotificationScheduler.schedule)
     }

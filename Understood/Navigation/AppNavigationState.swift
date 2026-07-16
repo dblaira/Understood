@@ -21,8 +21,8 @@ class AppNavigationState {
     /// detail pages cannot trap the user above the home surface.
     var navigationPath = NavigationPath()
 
-    /// Active section: "story", "connection", "extraction", or "timeline".
-    /// Legacy "note" and "action" routes remain available from the full-screen menu.
+    /// Active section. Cowboy, Reminders, Actions, and Calendar are the four
+    /// bottom destinations; Now and Beliefs remain available from the menu.
     var currentSection: String = "story"
 
     /// Pattern step filter: "all" or lowercased Adam Pattern step name

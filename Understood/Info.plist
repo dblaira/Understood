@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_cowboyai._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Understood connects to Cowboy AI on your Mac for private, offline personal reasoning.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Understood uses the camera to attach photos to entries and notes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -461,16 +461,28 @@ class SupabaseService {
 
     // MARK: - Extractions
 
-    /// Fetch all extractions across every batch for map aggregation
+    /// Fetch all extractions across every batch for map aggregation.
+    /// Supabase/PostgREST returns bounded pages, so keep paging until the
+    /// server returns a short page rather than silently stopping at 5,000.
     func fetchAllExtractions() async throws -> [Extraction] {
-        let extractions: [Extraction] = try await client
-            .from("extractions")
-            .select()
-            .order("created_at", ascending: false)
-            .limit(5000)
-            .execute()
-            .value
-        return extractions
+        let pageSize = 1_000
+        var offset = 0
+        var all: [Extraction] = []
+
+        while true {
+            let page: [Extraction] = try await client
+                .from("extractions")
+                .select()
+                .order("created_at", ascending: false)
+                .range(from: offset, to: offset + pageSize - 1)
+                .execute()
+                .value
+            all.append(contentsOf: page)
+            guard page.count == pageSize else { break }
+            offset += pageSize
+        }
+
+        return all
     }
 
     /// Fetch extractions for the current user, optionally filtered by batch ID

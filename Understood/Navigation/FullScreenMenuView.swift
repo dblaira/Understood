@@ -60,6 +60,14 @@ struct FullScreenMenuView: View {
                             nav.navigate(to: "note")
                         }
 
+                        sectionButton(
+                            label: "COWBOY AI",
+                            isActive: nav.currentSection == "cowboy"
+                        ) {
+                            Haptics.light()
+                            nav.navigate(to: "cowboy")
+                        }
+
                     }
                     .padding(.horizontal, 24)
 

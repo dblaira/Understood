@@ -38,6 +38,8 @@ struct MainTabView: View {
                         BeliefLibraryView(patternFilter: nav.currentFilter)
                     case "action":
                         ActionsView(patternFilter: nav.currentFilter)
+                    case "cowboy":
+                        CowboyAIView()
                     default:
                         ContentView(patternFilter: nav.currentFilter)
                     }
@@ -160,7 +162,7 @@ private struct BottomNavigationBar: View {
     private let fabSize: CGFloat = 64
 
     private var leadingSections: [(id: String, label: String, icon: String)] {
-        Array(AppNavigationState.sections.prefix(2))
+        Array(AppNavigationState.sections.dropFirst().prefix(1))
     }
 
     private var trailingSections: [(id: String, label: String, icon: String)] {
@@ -172,6 +174,8 @@ private struct BottomNavigationBar: View {
             barBackground
 
             HStack(alignment: .center, spacing: 0) {
+                cowboyButton
+
                 ForEach(leadingSections, id: \.id) { section in
                     navButton(section)
                 }
@@ -182,6 +186,7 @@ private struct BottomNavigationBar: View {
                 ForEach(trailingSections, id: \.id) { section in
                     navButton(section)
                 }
+
             }
             .padding(.horizontal, 12)
             .offset(y: 12)
@@ -205,20 +210,33 @@ private struct BottomNavigationBar: View {
         .background(barBackground.ignoresSafeArea(edges: .bottom))
     }
 
+    private var cowboyButton: some View {
+        Button {
+            Haptics.selection()
+            nav.navigate(to: "cowboy")
+        } label: {
+            Image("CowboyHat")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .frame(width: 38, height: 34)
+            .foregroundStyle(nav.currentSection == "cowboy" ? Color.understoodCrimson : inactiveColor)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Cowboy")
+        .accessibilityIdentifier("cowboyBottomNav")
+    }
+
     private func navButton(_ section: (id: String, label: String, icon: String)) -> some View {
         Button {
             Haptics.selection()
             nav.navigate(to: section.id)
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: section.icon)
-                    .font(.system(size: 22, weight: nav.currentSection == section.id ? .semibold : .regular))
-
-                Text(section.label)
-                    .font(Typography.chipLabel)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
+            Image(systemName: section.icon)
+                .font(.system(size: 29, weight: nav.currentSection == section.id ? .semibold : .regular))
             .foregroundStyle(nav.currentSection == section.id ? .understoodCrimson : inactiveColor)
             .frame(maxWidth: .infinity)
             .frame(height: 48)

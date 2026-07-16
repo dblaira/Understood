@@ -10,6 +10,16 @@
 		31A2CDA02F4EC1FB004BB679 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 31A2CD9F2F4EC1FB004BB679 /* Supabase */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		31F13F692F4EBA5D00193867 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 31F13F4B2F4EBA5C00193867 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 31F13F522F4EBA5C00193867;
+			remoteInfo = Understood;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		31F13F532F4EBA5C00193867 /* Understood.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Understood.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		31F13F622F4EBA5D00193867 /* UnderstoodUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = UnderstoodUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -50,7 +60,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXFrameworksBuildPhase section */
 		31F13F672F4EBA5D00193867 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -58,13 +67,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		315024133009721B00A73173 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				31F13F652F4EBA5D00193867 /* UnderstoodUITests */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		31F13F4A2F4EBA5C00193867 = {
 			isa = PBXGroup;
 			children = (
 				31F13F552F4EBA5C00193867 /* Understood */,
 				31F13F542F4EBA5C00193867 /* Products */,
+				315024133009721B00A73173 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -126,24 +145,6 @@
 		};
 /* End PBXNativeTarget section */
 
-/* Begin PBXContainerItemProxy section */
-		31F13F692F4EBA5D00193867 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 31F13F4B2F4EBA5C00193867 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 31F13F522F4EBA5C00193867;
-			remoteInfo = Understood;
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXTargetDependency section */
-		31F13F6A2F4EBA5D00193867 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 31F13F522F4EBA5C00193867 /* Understood */;
-			targetProxy = 31F13F692F4EBA5D00193867 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXProject section */
 		31F13F4B2F4EBA5C00193867 /* Project object */ = {
 			isa = PBXProject;
@@ -192,7 +193,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXResourcesBuildPhase section */
 		31F13F682F4EBA5D00193867 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -200,6 +200,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		31F13F4F2F4EBA5C00193867 /* Sources */ = {
@@ -217,6 +218,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		31F13F6A2F4EBA5D00193867 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 31F13F522F4EBA5C00193867 /* Understood */;
+			targetProxy = 31F13F692F4EBA5D00193867 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		31F13F5C2F4EBA5D00193867 /* Debug */ = {
@@ -349,7 +358,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Understood/Understood.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-					CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Understood/Info.plist;
@@ -382,7 +391,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Understood/Understood.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-					CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Understood/Info.plist;

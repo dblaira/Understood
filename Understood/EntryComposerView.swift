@@ -122,7 +122,7 @@ struct EntryComposerView: View {
         } header: { sectionHeader(EntryFormCopy.delegateHeader) }
         .listRowBackground(RecallFormBrand.card)
 
-        patternSection
+        organizationSection
 
         Section {
             priorityGroup
@@ -138,13 +138,6 @@ struct EntryComposerView: View {
             timeGroup("Nudge", icon: "bell", isOn: $hasTime, time: $time)
             timeGroup("End", icon: "clock.badge.checkmark", isOn: $hasEnd, time: $endTime)
         } header: { sectionHeader(EntryFormCopy.scheduleHeader) }
-        .listRowBackground(RecallFormBrand.card)
-
-        Section {
-            listGroup
-            Toggle(isOn: $r.flag) { Label("Flag", systemImage: "flag") }
-            tagsEditor
-        } header: { sectionHeader("Organize") }
         .listRowBackground(RecallFormBrand.card)
 
         Section {
@@ -244,10 +237,12 @@ struct EntryComposerView: View {
     private var energyGroup: some View {
         enumMenu("Energy", icon: "bolt", selection: $r.energy) { $0.label }
     }
-    /// Adam's 8-step success architecture — its own cream section, a clean dropdown.
-    private var patternSection: some View {
+    /// One organizing area: Pattern first, then Lift and Tags at the same hierarchy level.
+    private var organizationSection: some View {
         Section {
             enumMenu(EntryFormCopy.patternTitle, icon: "list.number", selection: $r.context) { $0.label }
+            listGroup
+            tagsEditor
         } header: { sectionHeader(EntryFormCopy.patternHeader) }
         .listRowBackground(RecallFormBrand.card)
     }

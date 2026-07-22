@@ -14,13 +14,9 @@ struct EntryComposerView: View {
 
     @State private var r: Reminder
     @State private var hasDate: Bool
-    @State private var hasTime: Bool
     @State private var hasDefer: Bool
-    @State private var hasEnd: Bool
     @State private var date: Date
-    @State private var time: Date
     @State private var deferDate: Date
-    @State private var endTime: Date
     @State private var tagDraft = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var pickedImage: UIImage?
@@ -30,6 +26,12 @@ struct EntryComposerView: View {
 
     private let listChoices = ["Learning", "Leverage", "Delegation", "Inspiration", "Risk", "Health"]
 
+    private static func dueDateTime(on date: Date, at time: Date? = nil) -> Date {
+        let calendar = Calendar.current
+        let timeComponents = calendar.dateComponents([.hour, .minute], from: time ?? calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date)
+        return calendar.date(bySettingHour: timeComponents.hour ?? 12, minute: timeComponents.minute ?? 0, second: 0, of: date) ?? date
+    }
+
     init(initialKind: ReminderKind = .reminder, existing: Reminder?, existingTags: [String] = [], onSave: @escaping (Reminder) -> Void) {
         self.existing = existing
         self.existingTags = existingTags
@@ -38,13 +40,9 @@ struct EntryComposerView: View {
         if existing == nil { base.kind = initialKind }
         _r = State(initialValue: base)
         _hasDate = State(initialValue: base.dueDate != nil)
-        _hasTime = State(initialValue: base.dueTime != nil)
         _hasDefer = State(initialValue: base.deferDate != nil)
-        _hasEnd = State(initialValue: base.endTime != nil)
-        _date = State(initialValue: base.dueDate ?? Date())
-        _time = State(initialValue: base.dueTime ?? Date())
+        _date = State(initialValue: Self.dueDateTime(on: base.dueDate ?? Date(), at: base.dueTime))
         _deferDate = State(initialValue: base.deferDate ?? Date())
-        _endTime = State(initialValue: base.endTime ?? base.dueTime ?? Date())
         _pickedImage = State(initialValue: LocalImageStore.load(base.imageLocalPath))
     }
 
@@ -126,17 +124,14 @@ struct EntryComposerView: View {
 
         Section {
             priorityGroup
-            effortGroup
             energyGroup
         } header: { sectionHeader(EntryFormCopy.chooseHeader) }
         .listRowBackground(RecallFormBrand.card)
 
         Section {
-            dateGroup("Due", icon: "calendar", isOn: $hasDate, date: $date)
-            dateGroup("Start / defer", icon: "calendar.badge.clock", isOn: $hasDefer, date: $deferDate)
+            dateGroup("Start", icon: "calendar.badge.clock", isOn: $hasDefer, date: $deferDate)
+            dueDateTimeGroup
             repeatGroup
-            timeGroup("Nudge", icon: "bell", isOn: $hasTime, time: $time)
-            timeGroup("End", icon: "clock.badge.checkmark", isOn: $hasEnd, time: $endTime)
         } header: { sectionHeader(EntryFormCopy.scheduleHeader) }
         .listRowBackground(RecallFormBrand.card)
 
@@ -204,11 +199,14 @@ struct EntryComposerView: View {
         }
     }
 
-    private func timeGroup(_ title: String, icon: String, isOn: Binding<Bool>, time: Binding<Date>) -> some View {
+    private var dueDateTimeGroup: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: isOn) { Label(title, systemImage: icon) }
-            DatePicker(title, selection: time, displayedComponents: .hourAndMinute)
-                .labelsHidden().disabled(!isOn.wrappedValue).opacity(isOn.wrappedValue ? 1 : 0.45)
+            Toggle(isOn: $hasDate) { Label("Due", systemImage: "calendar") }
+            DatePicker("Due", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                .labelsHidden().disabled(!hasDate).opacity(hasDate ? 1 : 0.45)
+        }
+        .onChange(of: hasDate) { _, isEnabled in
+            if isEnabled { date = Self.dueDateTime(on: date) }
         }
     }
 
@@ -230,9 +228,6 @@ struct EntryComposerView: View {
     }
     private var priorityGroup: some View {
         enumMenu("Priority", icon: "exclamationmark.3", selection: $r.priority) { $0.label }
-    }
-    private var effortGroup: some View {
-        enumMenu("Effort", icon: "timer", selection: $r.effort) { $0.label }
     }
     private var energyGroup: some View {
         enumMenu("Energy", icon: "bolt", selection: $r.energy) { $0.label }
@@ -367,7 +362,7 @@ struct EntryComposerView: View {
         if !r.locationName.isEmpty || !r.waitingOn.isEmpty { return true }
         if !r.tags.isEmpty { return true }
         if r.subtasks.contains(where: { !$0.title.trimmingCharacters(in: .whitespaces).isEmpty }) { return true }
-        if hasDate || hasTime || hasDefer || hasEnd || pickedImage != nil { return true }
+        if hasDate || hasDefer || pickedImage != nil { return true }
         return false
     }
 
@@ -377,9 +372,9 @@ struct EntryComposerView: View {
             r.imageLocalPath = LocalImageStore.save(pickedImage)
         }
         r.dueDate = hasDate ? date : nil
-        r.dueTime = hasTime ? time : nil
+        r.dueTime = hasDate ? date : nil
         r.deferDate = hasDefer ? deferDate : nil
-        r.endTime = hasEnd ? endTime : nil
+        r.endTime = nil
         r.subtasks.removeAll { $0.title.trimmingCharacters(in: .whitespaces).isEmpty }
         if r.title.trimmingCharacters(in: .whitespaces).isEmpty { r.title = "New \(r.kind.label)" }
         onSave(r)

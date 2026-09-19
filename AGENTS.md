@@ -54,7 +54,7 @@ Do not change signing, certificates, provisioning, or App Store Connect settings
 
 Update this line when the active milestone changes:
 
-**Current lane:** TestFlight-valid capture shell (Reminders / Actions / Calendar); hero layout fidelity + low-friction capture — web stays composition authority, no mind maps or PDF on iOS. Do not App Store submit without Adam. Do not expand scope without Adam saying so.
+**Current lane:** This iPhone app is leftover. The Understood name lives on Notorious Recall (`sh.notorious.app`). Do not expand this app. Do not App Store submit this app. Do not delete it from the phone unless Adam says take it down.
 
 ## How agents use Adam's Macs (required)
 

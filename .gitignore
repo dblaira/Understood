@@ -38,3 +38,13 @@ ExportOptions-TestFlight.plist
 
 # Claude Code agent worktrees (isolated dev checkouts, never committed)
 **/.claude/worktrees/
+
+# Leftover local styling — stays on this Mac, not in GitHub
+Understood/ContentView.swift
+Understood/MainTabView.swift
+Understood/UnderstoodApp.swift
+Understood/Views/RemindersHomeView.swift
+Understood/Design/StatusBarBleed.swift
+.cursor/rules/dont-paint-the-page-black.mdc
+.cursor/rules/header-paints-to-the-top.mdc
+.cursor/rules/page-title-is-connection-hero.mdc

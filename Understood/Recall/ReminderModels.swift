@@ -111,6 +111,11 @@ struct Reminder: Identifiable, Codable, Equatable {
     var priority: Priority = .none
     var whenIAm: String = ""
     var outcome: String = ""
+    // Shared with Recall and SAVY. Optional so existing entries still decode unchanged.
+    var postThemeID: String? = nil
+    var postThemeName: String? = nil
+    var postAnswers: [String]? = nil
+    var postAnswersContainQuestions: Bool? = nil
     var effort: Effort = .none
     var energy: Energy = .none
     var context: SuccessStep = .none

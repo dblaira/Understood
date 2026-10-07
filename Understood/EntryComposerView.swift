@@ -13,6 +13,7 @@ struct EntryComposerView: View {
     var onSave: (Reminder) -> Void
 
     @State private var r: Reminder
+    @State private var themeDraft: PostEntryDraft
     @State private var hasDate: Bool
     @State private var hasDefer: Bool
     @State private var date: Date
@@ -41,6 +42,7 @@ struct EntryComposerView: View {
         var base = existing ?? Reminder()
         if existing == nil { base.kind = initialKind }
         _r = State(initialValue: base)
+        _themeDraft = State(initialValue: PostEntryDraft(entry: base))
         _subtasks = State(initialValue: base.subtasks)
         _hasDate = State(initialValue: base.dueDate != nil)
         _hasDefer = State(initialValue: base.deferDate != nil)
@@ -114,6 +116,8 @@ struct EntryComposerView: View {
     // MARK: - Shared entry flow
 
     @ViewBuilder private var unifiedEntrySections: some View {
+        themeSections
+
         Section {
             TextField(EntryFormCopy.wantPrompt, text: $r.title)
                 .accessibilityIdentifier("Title")
@@ -157,6 +161,45 @@ struct EntryComposerView: View {
     }
 
     // MARK: - Reusable field groups
+
+    @ViewBuilder private var themeSections: some View {
+        Section {
+            Picker(selection: Binding(
+                get: { themeDraft.themeID },
+                set: { themeDraft.selectTheme($0) }
+            )) {
+                ForEach(PostThemeCatalog.themes) { theme in
+                    Text(theme.name).tag(theme.id)
+                }
+            } label: {
+                Label("Theme", systemImage: "list.bullet")
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("Theme")
+        } header: { sectionHeader("Theme") }
+        .listRowBackground(RecallFormBrand.card)
+
+        Section {
+            ForEach(Array(themeDraft.answers.indices), id: \.self) { index in
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: themeDraft.theme.questions.indices.contains(index)
+                          ? themeDraft.theme.questions[index].symbol : "pencil")
+                        .foregroundStyle(RecallFormBrand.crimson)
+                        .padding(.top, 3)
+                    TextField("", text: Binding(
+                        get: { themeDraft.answers[index] },
+                        set: { themeDraft.setAnswer($0, at: index) }
+                    ), axis: .vertical)
+                    .lineLimit(1...)
+                    .foregroundStyle(.black)
+                    .accessibilityLabel(themeDraft.theme.questions.indices.contains(index)
+                                        ? themeDraft.theme.questions[index].prompt : "Answer")
+                    .accessibilityIdentifier("themeAnswer\(index)")
+                }
+            }
+        } header: { sectionHeader("Decide") }
+        .listRowBackground(RecallFormBrand.card)
+    }
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
@@ -373,6 +416,7 @@ struct EntryComposerView: View {
     }
 
     private var hasContent: Bool {
+        if themeDraft.hasUserContent { return true }
         if !r.title.trimmingCharacters(in: .whitespaces).isEmpty { return true }
         if !r.notes.isEmpty || !r.outcome.isEmpty || !r.whenIAm.isEmpty || !r.url.isEmpty { return true }
         if !r.locationName.isEmpty || !r.waitingOn.isEmpty { return true }
@@ -384,6 +428,7 @@ struct EntryComposerView: View {
 
     private func persist() {
         addTag()
+        themeDraft.apply(to: &r)
         if let pickedImage {
             r.imageLocalPath = LocalImageStore.save(pickedImage)
         }

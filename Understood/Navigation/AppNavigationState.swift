@@ -21,7 +21,7 @@ class AppNavigationState {
     /// detail pages cannot trap the user above the home surface.
     var navigationPath = NavigationPath()
 
-    /// Active section. Cowboy, Reminders, Actions, and Calendar are the four
+    /// Active section. Home, Reminders, Actions, and Calendar are the four
     /// bottom destinations; Now and Beliefs remain available from the menu.
     var currentSection: String = "story"
 

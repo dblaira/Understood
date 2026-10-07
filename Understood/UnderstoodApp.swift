@@ -14,6 +14,7 @@ struct UnderstoodApp: App {
     @State private var supabase = SupabaseService.shared
     @State private var nav = AppNavigationState()
     @StateObject private var reminderStore = ReminderStore()
+    @State private var appliedUITestLaunchState = false
 
     /// DEBUG-only simulator verification door: skips the login gate (local store only, no
     /// Supabase writes) so UI can be exercised and screenshotted without credentials.
@@ -79,13 +80,20 @@ struct UnderstoodApp: App {
         }
     }
 
-    /// Optional launch arguments consumed with the bypass: "-uitestSection <id>" opens a tab,
-    /// "-uitestSeed" plants sample reminders/actions/events in the local store.
+    /// DEBUG launch controls also support inspecting the signed-in physical app without reset:
+    /// "-uitestComposer <kind>" opens the real entry sheet; "-uitestSection <id>" opens a tab.
+    /// "-uitestSeed" is reserved for isolated simulator data.
     private func applyUITestLaunchState() {
         #if DEBUG
+        guard !appliedUITestLaunchState else { return }
+        appliedUITestLaunchState = true
         let args = ProcessInfo.processInfo.arguments
         if let idx = args.firstIndex(of: "-uitestSection"), args.indices.contains(idx + 1) {
             nav.currentSection = args[idx + 1]
+        }
+        if let idx = args.firstIndex(of: "-uitestComposer"), args.indices.contains(idx + 1),
+           let kind = AppNavigationState.CaptureKind(rawValue: args[idx + 1]) {
+            nav.openComposer(kind: kind)
         }
         if args.contains("-uitestSeed"), reminderStore.reminders.isEmpty {
             var first = Reminder(); first.kind = .reminder; first.title = "Sim check one"

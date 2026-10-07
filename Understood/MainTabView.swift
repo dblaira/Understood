@@ -38,8 +38,6 @@ struct MainTabView: View {
                         BeliefLibraryView(patternFilter: nav.currentFilter)
                     case "action":
                         ActionsView(patternFilter: nav.currentFilter)
-                    case "cowboy":
-                        CowboyAIView()
                     default:
                         ContentView(patternFilter: nav.currentFilter)
                     }
@@ -174,7 +172,7 @@ private struct BottomNavigationBar: View {
             barBackground
 
             HStack(alignment: .center, spacing: 0) {
-                cowboyButton
+                homeButton
 
                 ForEach(leadingSections, id: \.id) { section in
                     navButton(section)
@@ -210,24 +208,22 @@ private struct BottomNavigationBar: View {
         .background(barBackground.ignoresSafeArea(edges: .bottom))
     }
 
-    private var cowboyButton: some View {
+    private var homeButton: some View {
         Button {
             Haptics.selection()
-            nav.navigate(to: "cowboy")
+            nav.returnHome()
         } label: {
-            Image("CowboyHat")
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .frame(width: 38, height: 34)
-            .foregroundStyle(nav.currentSection == "cowboy" ? Color.understoodCrimson : inactiveColor)
+            Image(systemName: "house")
+                .font(.system(size: 29, weight: nav.currentSection == "story" ? .semibold : .regular))
+            .foregroundStyle(nav.currentSection == "story" ? Color.understoodCrimson : inactiveColor)
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Cowboy")
-        .accessibilityIdentifier("cowboyBottomNav")
+        .accessibilityLabel("Home")
+        .accessibilityIdentifier("homeBottomNav")
+        .accessibilityAddTraits(nav.currentSection == "story" ? [.isSelected] : [])
     }
 
     private func navButton(_ section: (id: String, label: String, icon: String)) -> some View {

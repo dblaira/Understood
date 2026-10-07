@@ -28,6 +28,10 @@ private struct ReminderRow: Decodable {
     var end_time: String?
     var when_i_am: String
     var outcome: String
+    var post_theme_id: String?
+    var post_theme_name: String?
+    var post_answers: [String]?
+    var post_answers_contain_questions: Bool?
     var effort: String
     var energy: String
     var context: String
@@ -60,6 +64,10 @@ private struct ReminderUpsert: Encodable {
     var end_time: String?
     var when_i_am: String
     var outcome: String
+    var post_theme_id: String?
+    var post_theme_name: String?
+    var post_answers: [String]?
+    var post_answers_contain_questions: Bool?
     var effort: String
     var energy: String
     var context: String
@@ -118,6 +126,10 @@ final class SupabaseReminderRepository: ReminderRepository {
     }
 
     func ensureReady() async -> Bool {
+        #if DEBUG
+        // UI verification uses the local cache and must never write test entries to Supabase.
+        if ProcessInfo.processInfo.arguments.contains("-uitestBypassAuth") { return false }
+        #endif
         await supabase.checkSession()
         return supabase.isAuthenticated
     }
@@ -246,6 +258,10 @@ final class SupabaseReminderRepository: ReminderRepository {
             end_time: reminder.endTime.map { PG.time.string(from: $0) },
             when_i_am: reminder.whenIAm,
             outcome: reminder.outcome,
+            post_theme_id: reminder.postThemeID,
+            post_theme_name: reminder.postThemeName,
+            post_answers: reminder.postAnswers,
+            post_answers_contain_questions: reminder.postAnswersContainQuestions,
             effort: reminder.effort.rawValue,
             energy: reminder.energy.rawValue,
             context: reminder.context.rawValue,
@@ -277,6 +293,10 @@ final class SupabaseReminderRepository: ReminderRepository {
         reminder.endTime = row.end_time.flatMap { PG.time.date(from: $0) }
         reminder.whenIAm = row.when_i_am
         reminder.outcome = row.outcome
+        reminder.postThemeID = row.post_theme_id
+        reminder.postThemeName = row.post_theme_name
+        reminder.postAnswers = row.post_answers
+        reminder.postAnswersContainQuestions = row.post_answers_contain_questions
         reminder.effort = Effort(rawValue: row.effort) ?? .none
         reminder.energy = Energy(rawValue: row.energy) ?? .none
         reminder.context = SuccessStep(rawValue: row.context) ?? .none

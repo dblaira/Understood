@@ -54,7 +54,7 @@ Do not change signing, certificates, provisioning, or App Store Connect settings
 
 Update this line when the active milestone changes:
 
-**Current lane:** This iPhone app is leftover. The Understood name lives on Notorious Recall (`sh.notorious.app`). Do not expand this app. Do not App Store submit this app. Do not delete it from the phone unless Adam says take it down.
+**Current lane:** Adam approved Home navigation, hidden CowboyAI access, and Recall/SAVY Themes first in every FAB entry form (2026-10-06). This repository is the editorial Understood app (`app.understood.Understood`); Re_Call is a separate app also named Understood (`sh.notorious.app`). Do not App Store submit or delete this app from the phone unless Adam asks.
 
 ## How agents use Adam's Macs (required)
 

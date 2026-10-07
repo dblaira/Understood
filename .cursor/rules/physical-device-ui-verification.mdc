@@ -1,0 +1,11 @@
+---
+description: Preserve real iPhone data during native UI verification
+alwaysApply: false
+---
+
+# Physical iPhone verification
+
+- If iPhone Mirroring can capture the app but input returns `noWindowsAvailable`, refresh the app binding once. If input still fails, use native device testing instead of repeating coordinate clicks. If the device test runner cannot authenticate, use the existing DEBUG launch controls to inspect the actual app screens and report behavioral tests separately.
+- Never run tests with `-uitestResetStore` on Adam's physical iPhone. The normal capture suite resets a simulator cache. Physical verification uses the existing signed-in app and preserves its data.
+- Verify only uniquely named test entries created by the run, then soft-delete those entries after checking sync. Keep Adam's existing entries intact.
+- If all UI tests have finished but `xcodebuild` remains running, inspect its wait state before starting another run. A stalled post-test `simctl diagnose` collector is separate from the tests; retain the test logs and report any collector interruption explicitly.
